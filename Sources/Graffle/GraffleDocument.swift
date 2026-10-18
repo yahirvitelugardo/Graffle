@@ -94,6 +94,18 @@ final class GraffleDocument: NSDocument {
         return doc
     }
 
+    /// Opens `drawing` as a new untitled diagram ("Untitled", "Untitled 2", …).
+    @discardableResult
+    static func openNew(drawing: Drawing) -> GraffleDocument? {
+        let controller = NSDocumentController.shared
+        guard let doc = (try? controller.makeUntitledDocument(ofType: diagramType)) as? GraffleDocument else { return nil }
+        doc.loaded = drawing
+        controller.addDocument(doc)
+        doc.makeWindowControllers()
+        doc.showWindows()
+        return doc
+    }
+
     /// Keeps `drawing` as the document's contents, and shows it if the window already exists (Revert to Saved).
     private func show(_ drawing: Drawing) {
         loaded = drawing

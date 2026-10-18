@@ -232,6 +232,9 @@ final class InspectorView: NSView, NSTableViewDataSource, NSTableViewDelegate, N
     // Sections (all live in one scrolling column)
     private var stylesSection: DisclosureSection!
     private var fillSection: DisclosureSection!
+    /// The Navigator, above everything else in the sidebar.
+    let navigator = NavigatorView()
+    private var navigatorSection: DisclosureSection!
     private var lineSection: DisclosureSection!
     private var shadowSection: DisclosureSection!
     private var objectSection: DisclosureSection!
@@ -269,7 +272,8 @@ final class InspectorView: NSView, NSTableViewDataSource, NSTableViewDelegate, N
     private let shadowOffset = SliderRow("Distance", 0, 30)
 
     // Object
-    private let opacity = SliderRow("Opacity", 0, 1, suffix: "%", displayScale: 100)
+    private let opacity = SliderRow("Overall", 0, 1, suffix: "%", displayScale: 100)       // the whole object, fill and line
+    private let fillOpacity = SliderRow("Opacity", 0, 1, suffix: "%", displayScale: 100)   // the fill only
     private let radius = SliderRow("Corners", 0, 80)
     private let rotation = AngleRow("Rotation")
 
@@ -338,12 +342,23 @@ final class InspectorView: NSView, NSTableViewDataSource, NSTableViewDelegate, N
     /// Every drop-down in the inspector is this wide, whatever its pictures measure, so the column looks even.
     private static let popupWidth: CGFloat = 132
 
+    /// A smaller copy of a menu picture with empty margin around it, so it doesn't touch the edges of the pop-up or its menu rows.
+    private static func inset(_ image: NSImage, scale: CGFloat = 0.72, margin: CGFloat = 5) -> NSImage {
+        let drawn = NSSize(width: (image.size.width * scale).rounded(), height: (image.size.height * scale).rounded())
+        let out = NSImage(size: NSSize(width: drawn.width + margin * 2, height: drawn.height + margin * 2), flipped: false) { _ in
+            image.draw(in: NSRect(x: margin, y: margin, width: drawn.width, height: drawn.height), from: .zero, operation: .sourceOver, fraction: 1)
+            return true
+        }
+        out.isTemplate = image.isTemplate
+        return out
+    }
+
     /// A pop-up whose items are pictures; the name is only a tooltip.
     private func fillImages(_ popup: NSPopUpButton, _ images: [NSImage], tips: [String]) {
         popup.removeAllItems()
         for (img, tip) in zip(images, tips) {
             let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-            item.image = img
+            item.image = InspectorView.inset(img)
             item.toolTip = tip
             popup.menu?.addItem(item)
         }
@@ -423,7 +438,7 @@ final class InspectorView: NSView, NSTableViewDataSource, NSTableViewDelegate, N
         stylePalette.library = library
         stylesSection = DisclosureSection("Styles", [stylePalette])
         fillSection = DisclosureSection("Fill", [row("Type", fillKind), colorPresets, fillColorRow,
-                                                 gradientEditor, stopColorRow, stopPosition.row, stopButtons, fillAngle.row])
+                                                 gradientEditor, stopColorRow, stopPosition.row, stopButtons, fillAngle.row, fillOpacity.row])
         lineSection = DisclosureSection("Line", [strokeOn, row("Color", strokeColor), strokeWidth.row,
                                                  row("Pattern", dashPopup), row("Cap", capPopup), row("Corner", joinPopup)])
         // Only the checkbox is always there; the rest appear while the shadow is on.
@@ -444,7 +459,12 @@ final class InspectorView: NSView, NSTableViewDataSource, NSTableViewDelegate, N
         connectorSection = DisclosureSection("Connector", [row("Type", routePopup), row("Start", startHead),
                                                            row("End", endHead), headSize.row, note])
 
-        let column = NSStackView(views: [header, stylesSection, fillSection, lineSection, shadowSection, objectSection,
+        navigatorSection = DisclosureSection("Navigator", [navigator])
+        navigatorSection.isHidden = !NavigatorView.isVisible
+        NotificationCenter.default.addObserver(forName: .navigatorVisibilityChanged, object: nil, queue: nil) { [weak self] _ in
+            self?.navigatorSection.isHidden = !NavigatorView.isVisible
+        }
+        let column = NSStackView(views: [navigatorSection, header, stylesSection, fillSection, lineSection, shadowSection, objectSection,
                                          textSection, connectorSection])
         column.orientation = .vertical
         column.alignment = .leading
@@ -490,6 +510,9 @@ final class InspectorView: NSView, NSTableViewDataSource, NSTableViewDelegate, N
         ])
     }
 
+    /// True while the Navigator section is on screen.
+    var navigatorShown: Bool { !navigatorSection.isHidden }
+
     /// Titles of the sections currently on screen (used by the self-test).
     var visibleSectionTitles: [String] {
         [stylesSection, fillSection, lineSection, shadowSection, objectSection, textSection, connectorSection]
@@ -508,6 +531,7 @@ final class InspectorView: NSView, NSTableViewDataSource, NSTableViewDelegate, N
     var fontControl: NSPopUpButton { fontPopup }
     var lineWidthControl: SliderRow { strokeWidth }
     var opacityControl: SliderRow { opacity }
+    var fillOpacityControl: SliderRow { fillOpacity }
 
     var isLayersPanelHidden: Bool { layersPane.isHidden || layersPane.superview == nil }
     var layerRowCount: Int { layerTable.numberOfRows }
@@ -614,6 +638,14 @@ final class InspectorView: NSView, NSTableViewDataSource, NSTableViewDelegate, N
             shadowOffset.refreshReadout()
             let v = s.doubleValue.rounded()
             canvas?.applyStyle("Shadow Distance") { $0.shadow.offset = v }
+        }
+        bind(fillOpacity.slider) { [unowned self] s in
+            fillOpacity.refreshReadout()
+            let v = s.doubleValue
+            canvas?.applyStyle("Fill Opacity") { st in
+                st.fill.color.a = v
+                for i in st.fill.stops.indices { st.fill.stops[i].color.a = v }
+            }
         }
         bind(opacity.slider) { [unowned self] s in
             opacity.refreshReadout()
@@ -737,6 +769,12 @@ final class InspectorView: NSView, NSTableViewDataSource, NSTableViewDelegate, N
         gradientEditor.selected = min(gradientEditor.selected, max(st.fill.stops.count - 1, 0))
         syncStopControls()
         fillAngle.set(st.fill.angle)
+        switch st.fill.kind {
+        case .none, .solid: fillOpacity.set(st.fill.color.a)
+        case .linear, .radial:
+            let alphas = st.fill.stops.map(\.color.a)
+            fillOpacity.set(alphas.isEmpty ? 1 : alphas.reduce(0, +) / Double(alphas.count))
+        }
 
         strokeOn.state = st.stroke.visible ? .on : .off
         strokeColor.color = st.stroke.color.ns
@@ -785,6 +823,7 @@ final class InspectorView: NSView, NSTableViewDataSource, NSTableViewDelegate, N
         let kind = st.fill.kind
         let isGradient = kind == .linear || kind == .radial
         fillColorRow.isHidden = kind != .solid
+        fillOpacity.row.isHidden = kind == .none
         colorPresets.isHidden = kind == .none
         if kind == .solid { colorPresets.selectedColor = st.fill.color }
         else if st.fill.stops.indices.contains(gradientEditor.selected) { colorPresets.selectedColor = st.fill.stops[gradientEditor.selected].color }

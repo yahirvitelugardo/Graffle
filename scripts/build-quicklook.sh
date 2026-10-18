@@ -17,11 +17,17 @@ mkdir -p "$EXT/Contents/MacOS"
 SOURCES=(
   Sources/Graffle/Model.swift
   Sources/Graffle/Render.swift
+  Sources/Graffle/Theme/RenderEffects.swift
+  Sources/Graffle/Theme/ThemeDefinition.swift
+  Sources/Graffle/Theme/ThemeApply.swift
+  Sources/Graffle/Theme/ThemeLibrary.swift
+  Sources/Graffle/Theme/BuiltInThemes.swift
   Sources/Graffle/PathEditing.swift
   Sources/Graffle/StyleLibrary.swift
   Sources/Graffle/SVGImport.swift
   Sources/Graffle/SVGExport.swift
   Sources/Graffle/CanvasView.swift
+  Sources/Graffle/Zoom.swift
   Sources/Graffle/DiagramPreview.swift
   QuickLookExtension/PreviewProvider.swift
 )

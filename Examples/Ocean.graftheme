@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "ocean-example",
+  "name": "Ocean (example)",
+  "author": "Graffle",
+  "summary": "An example theme file: deep teal glassy shapes with a teal grid. Copy it and change the values to make your own.",
+  "gridColor": "#0F5C6E26",
+  "accent": "#4FD1C5",
+  "accentMix": 0.5,
+  "shape": {
+    "fill": { "surface": "#0B3C49", "tint": 0.2, "alpha": 0.94 },
+    "stroke": { "color": "#B2F5EA", "alpha": 0.9, "width": 1.5 },
+    "shadow": { "color": "#00000055", "blur": 14, "offset": 6, "angle": 90 },
+    "effect": "glass",
+    "cornerRadius": 16,
+    "text": { "color": "#E6FFFA", "fonts": ["Avenir Next", "Helvetica Neue"] }
+  },
+  "connector": { "color": "#0F766E", "width": 2, "cap": "round" }
+}

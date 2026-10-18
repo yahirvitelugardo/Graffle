@@ -13,7 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var snapshotter: SVGSnapshotter?
 
     private static let developerFlags: Set<String> = [
-        "--render-sample", "--render-about", "--import-to-png", "--architecture-to-png", "--svg-to-png", "--selftest", "--debug-window",
+        "--render-sample", "--render-about", "--import-to-png", "--architecture-to-png", "--render-chooser", "--render-navigator", "--classes-to-png", "--starter-to-png", "--svg-to-png", "--selftest", "--debug-window",
     ]
     private var isDeveloperRun: Bool { !AppDelegate.developerFlags.isDisjoint(with: CommandLine.arguments) }
 
@@ -39,6 +39,80 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
+        if let i = CommandLine.arguments.firstIndex(of: "--starter-to-png"), i + 2 < CommandLine.arguments.count {
+            // Dev helper: render a starter diagram (uml, entityRelationship, conceptual, synoptic, pyramid, ishikawa, tree) as PNG.
+            let a = CommandLine.arguments
+            if let starter = Starter(rawValue: a[i + 1]) {
+                var d = Starters.drawing(starter)
+                if let t = a.first(where: { $0.hasPrefix("--theme=") }), let theme = ThemeLibrary.theme(id: String(t.dropFirst(8))) { theme.apply(to: &d) }
+                canvas.frame = CGRect(origin: .zero, size: CanvasView.canvasSize)
+                canvas.load(d)
+                if let png = canvas.pngData() { try? png.write(to: URL(fileURLWithPath: a[i + 2])) }
+                print("starter:", starter.rawValue, d.shapes.count, "shapes,", d.connectors.count, "connectors")
+            }
+            exit(0)
+        }
+        if let i = CommandLine.arguments.firstIndex(of: "--classes-to-png"), i + 2 < CommandLine.arguments.count {
+            // Dev helper: read a project's types and export the class diagram as PNG.
+            let a = CommandLine.arguments
+            var options = ClassOptions()
+            options.includeMembers = !a.contains("--no-members")
+            do {
+                let g = try ClassImporter.analyze(URL(fileURLWithPath: a[i + 1]), options: options)
+                var d = ClassDrawing.build(g, options: options)
+                if let t = a.first(where: { $0.hasPrefix("--theme=") }), let theme = ThemeLibrary.theme(id: String(t.dropFirst(8))) { theme.apply(to: &d) }
+                canvas.frame = CGRect(origin: .zero, size: CanvasView.canvasSize)
+                canvas.load(d)
+                if let png = canvas.pngData() { try? png.write(to: URL(fileURLWithPath: a[i + 2])) }
+                print("classes:", g.types.count, "types,", g.relations.count, "relations")
+            } catch { print("failed:", error.localizedDescription) }
+            exit(0)
+        }
+        if let i = CommandLine.arguments.firstIndex(of: "--render-navigator"), i + 1 < CommandLine.arguments.count {
+            // Dev helper: show the Navigator over a sample diagram, snapshot the panel to PNG and quit.
+            let out = CommandLine.arguments[i + 1]
+            let wc = DocumentWindowController()
+            wc.window?.setContentSize(NSSize(width: 1000, height: 700))
+            wc.showWindow(nil)
+            var d = ThemePreview.architectureSample()
+            ThemeLibrary.theme(id: "soft-ui")?.apply(to: &d)
+            wc.canvas.load(d)
+            wc.scroll.magnification = 2
+            wc.canvas.scrollCenter(to: CGPoint(x: 300, y: 250))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                wc.inspector.layoutSubtreeIfNeeded()
+                let view = wc.inspector.navigator
+                if let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                    view.cacheDisplay(in: view.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out))
+                    print("navigator", view.bounds.size)
+                }
+                if let win = wc.window, let content = win.contentView, let rep = content.bitmapImageRepForCachingDisplay(in: content.bounds) {
+                    content.cacheDisplay(in: content.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out + ".window.png"))
+                }
+                exit(0)
+            }
+            return
+        }
+        if let i = CommandLine.arguments.firstIndex(of: "--render-chooser"), i + 1 < CommandLine.arguments.count {
+            // Dev helper: open the New Document window, snapshot it to PNG and quit.
+            let out = CommandLine.arguments[i + 1]
+            let themeOnly = CommandLine.arguments.contains("--theme-only")
+            let c = themeOnly ? NewDocumentController.presentThemePicker(on: window, selected: nil) { _ in }
+                              : NewDocumentController.presentNewDocument { _ in }
+            if CommandLine.arguments.contains("--classes") { c.select(template: DocumentTemplate.all[2]) }
+            if CommandLine.arguments.contains("--step-theme") { c.confirm() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                if let view = c.window?.contentView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                    view.cacheDisplay(in: view.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out))
+                    print("chooser", view.bounds.size, "previews", c.themePreviewCount, "of", c.themeIDs.count)
+                }
+                exit(0)
+            }
+            return
+        }
         if let i = CommandLine.arguments.firstIndex(of: "--architecture-to-png"), i + 2 < CommandLine.arguments.count {
             // Dev helper: analyze a project and export its architecture diagram as PNG.
             let a = CommandLine.arguments
@@ -49,8 +123,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let d = ArchitectureDrawing.build(g)
                 canvas.frame = CGRect(origin: .zero, size: CanvasView.canvasSize)
                 canvas.load(d)
-                if let png = canvas.pngData() { try? png.write(to: URL(fileURLWithPath: a[i + 2])) }
-                print("architecture:", g.nodes.count, "nodes,", g.edges.count, "edges")
+                if let t = a.first(where: { $0.hasPrefix("--theme=") }), let theme = ThemeLibrary.theme(id: String(t.dropFirst(8))) { canvas.applyTheme(theme) }
+                if let png = canvas.pngData() {
+                    try? png.write(to: URL(fileURLWithPath: a[i + 2]))
+                    if let rep = NSBitmapImageRep(data: png) {
+                        for pt in [(2, 2), (60, 60), (100, 100), (200, 200), (400, 400), (rep.pixelsWide - 3, rep.pixelsHigh - 3)] {
+                            print("pixel", pt, rep.colorAt(x: pt.0, y: pt.1).map { "\($0.redComponent) \($0.greenComponent) \($0.blueComponent) \($0.alphaComponent)" } ?? "-")
+                        }
+                    }
+                }
+                print("architecture:", g.nodes.count, "nodes,", g.edges.count, "edges", "export", canvas.exportBounds().map { "\($0)" } ?? "-", "content", canvas.drawing.contentBounds.map { "\($0)" } ?? "-")
             } catch { print("failed:", error.localizedDescription) }
             exit(0)
         }
@@ -86,6 +168,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         NSApp.mainMenu = makeMainMenu()
+
+        // With nothing opened from Finder, start with the New Document window. (Files opened from Finder arrive just after launch.)
+        if !isDeveloperRun {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                if NSDocumentController.shared.documents.isEmpty { self?.showNewDocumentWindow() }
+            }
+        }
 
         // Dev helper: `open -a Graffle.app files… --args --dump-windows out.txt` writes what the running app's windows look like.
         if let i = CommandLine.arguments.firstIndex(of: "--dump-windows"), i + 1 < CommandLine.arguments.count {
@@ -126,7 +215,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Quitting asks about unsaved documents, and opening files from Finder, the Dock or Open Recent, all come
     // from NSDocumentController. These two answers are all the app itself has to give.
-    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { !isDeveloperRun }
+    /// Untitled documents are made through the New Document window instead (so the user picks a type and a theme).
+    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { false }
+
+    /// Clicking the Dock icon with no windows open starts a new document the same way.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag && !isDeveloperRun { showNewDocumentWindow() }
+        return false
+    }
+
+    /// Shows the New Document window, and creates what was chosen.
+    func showNewDocumentWindow() {
+        NewDocumentController.presentNewDocument { [weak self] choice in self?.createDocument(choice) }
+    }
+
+    @objc func newDocumentChooser(_ sender: Any?) { showNewDocumentWindow() }
+
+    func createDocument(_ choice: NewDocumentController.Choice) {
+        switch choice.template.kind {
+        case .blank:
+            var drawing = Drawing()
+            choice.theme.apply(to: &drawing)
+            GraffleDocument.openNew(drawing: drawing)
+        case .architecture:
+            chooseProjectForArchitecture(theme: choice.theme)
+        case .classes:
+            chooseProjectForClasses(theme: choice.theme)
+        case .starter:
+            guard let starter = choice.template.starter else { return }
+            var drawing = Starters.drawing(starter)
+            choice.theme.apply(to: &drawing)
+            GraffleDocument.openNew(drawing: drawing)
+        }
+    }
+
+    /// File → Import Theme…: adds a `.graftheme` file to the library.
+    @objc func importThemeFile(_ sender: Any?) {
+        NewDocumentController.runImportPanel(on: nil) { theme in
+            guard let theme else { return }
+            let alert = NSAlert()
+            alert.messageText = "Added the theme “\(theme.name)”"
+            alert.informativeText = "Pick it in File → New… when you start a document, or in View → Theme… for an open one."
+            alert.runModal()
+        }
+    }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     // MARK: Menus
@@ -169,7 +301,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         recentItem.submenu = recent
 
         main.addItem(submenu("File", [
-            item("New", #selector(NSDocumentController.newDocument(_:)), "n"),
+            item("New…", #selector(AppDelegate.newDocumentChooser(_:)), "n"),
+            item("New Blank Diagram", #selector(NSDocumentController.newDocument(_:)), "n", [.command, .option]),
             item("Open…", #selector(NSDocumentController.openDocument(_:)), "o"),
             recentItem,
             sep(),
@@ -180,6 +313,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             sep(),
             item("Import SVG…", #selector(DocumentWindowController.importSVG(_:)), "i", [.command, .shift]),
             item("Import Project Architecture…", #selector(AppDelegate.importXcodeProject(_:))),
+            item("Import Class Diagram…", #selector(AppDelegate.importClassDiagram(_:))),
+            item("Import Theme…", #selector(AppDelegate.importThemeFile(_:))),
             item("Export as PNG…", #selector(DocumentWindowController.exportPNG(_:)), "e", [.command, .shift]),
             item("Export as PDF…", #selector(DocumentWindowController.exportPDF(_:)), "p", [.command, .shift]),
             item("Export as SVG…", #selector(DocumentWindowController.exportSVG(_:)), "e", [.command, .option]),
@@ -230,11 +365,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item("Zoom In", #selector(DocumentWindowController.zoomIn(_:)), "="),
             item("Zoom Out", #selector(DocumentWindowController.zoomOut(_:)), "-"),
             item("Actual Size", #selector(DocumentWindowController.zoomActual(_:)), "0"),
+            item("Zoom to Fit", #selector(DocumentWindowController.zoomToFit(_:)), "0", [.command, .option]),
+            item("Zoom to Selection", #selector(DocumentWindowController.zoomToSelection(_:)), "0", [.command, .control]),
+            item("Hide Navigator", #selector(DocumentWindowController.toggleNavigator(_:)), "j", [.command, .option]),
             sep(),
             item("Show Rulers", #selector(DocumentWindowController.toggleRulers(_:)), "r"),
             item("Smart Guides", #selector(DocumentWindowController.toggleSmartGuides(_:))),
             item("Show Grid", #selector(DocumentWindowController.toggleGrid(_:)), "'"),
             item("Snap to Grid", #selector(DocumentWindowController.toggleSnap(_:)), ";"),
+            sep(),
+            item("Theme…", #selector(DocumentWindowController.chooseTheme(_:))),
         ]))
 
         // Registering this as the Window menu is what makes AppKit list the open documents in it and add the
@@ -1561,7 +1701,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             insp.lineWidthControl.enter("6")
             insp.opacityControl.enter("50")
-            let typed = canvas2.drawing.shapes[0].style.stroke.width == 6 && abs(canvas2.drawing.shapes[0].style.opacity - 0.5) < 1e-9
+            var typed = canvas2.drawing.shapes[0].style.stroke.width == 6 && abs(canvas2.drawing.shapes[0].style.opacity - 0.5) < 1e-9
+            // The Fill section has its own opacity: it changes the fill's alpha (solid and every gradient stop), not the object's.
+            insp.fillOpacityControl.enter("40")
+            let solid = canvas2.drawing.shapes[0].style
+            typed = typed && abs(solid.fill.color.a - 0.4) < 1e-9 && abs(solid.opacity - 0.5) < 1e-9 && solid.stroke.color.a == 1
+            canvas2.applyStyle("Gradient") { $0.fill.kind = .linear }
+            insp.refresh()
+            insp.fillOpacityControl.enter("70")
+            let grad = canvas2.drawing.shapes[0].style.fill
+            typed = typed && grad.stops.allSatisfy { abs($0.color.a - 0.7) < 1e-9 } && abs(insp.fillOpacityControl.slider.doubleValue - 0.7) < 1e-9
+            canvas2.applyStyle("Solid") { $0.fill.kind = .solid; $0.fill.color.a = 1 }
+            insp.refresh()
 
             func checkbox(in v: NSView) -> NSButton? {
                 if let b = v as? NSButton, b.title == "Shadow" { return b }
@@ -2462,7 +2613,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let file = submenu("File"), let view = submenu("View"), let window = submenu("Window") else { return false }
             func action(_ m: NSMenu, _ title: String) -> Selector? { m.items.first { $0.title == title }?.action }
             let recent = file.items.first { $0.title == "Open Recent" }?.submenu
-            return action(file, "New") == #selector(NSDocumentController.newDocument(_:))
+            return action(file, "New…") == #selector(AppDelegate.newDocumentChooser(_:))
+                && action(file, "New Blank Diagram") == #selector(NSDocumentController.newDocument(_:))
+                && action(file, "Import Theme…") == #selector(AppDelegate.importThemeFile(_:))
+                && action(view, "Theme…") == #selector(DocumentWindowController.chooseTheme(_:))
                 && action(file, "Open…") == #selector(NSDocumentController.openDocument(_:))
                 && action(file, "Save") == #selector(NSDocument.save(_:))
                 && action(file, "Save As…") == #selector(NSDocument.saveAs(_:))
@@ -2477,6 +2631,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 && NSApp.windowsMenu === window                                  // so AppKit lists the open documents in it
         }))
         steps.append(contentsOf: self.architectureSteps(bundled: bundled, tempDir: tempDir))
+        steps.append(contentsOf: self.navigatorSteps())
+        steps.append(contentsOf: self.classDiagramSteps(tempDir: tempDir))
+        steps.append(contentsOf: self.starterSteps(bundled: bundled))
+        steps.append(contentsOf: self.themeSteps(cv: cv, drag: drag, bundled: bundled, tempDir: tempDir))
         var twoDocs: (a: GraffleDocument, b: GraffleDocument)?
         steps.append(("documents: New opens independent windows, each with its own canvas and inspector", {
             guard bundled else { print("      (skipped: needs the .app bundle)"); return true }

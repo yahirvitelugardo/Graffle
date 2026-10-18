@@ -159,6 +159,24 @@ struct Stroke: Codable, Equatable {
     var dash: DashKind = .solid
     var cap: CapKind = .butt
     var join: JoinKind = .round
+    /// How hand-drawn the line looks, 0...1 (crayon, chalk). Optional so documents saved before themes still open.
+    var rough: Double? = nil
+
+    var roughness: Double { rough ?? 0 }
+}
+
+/// Extra rendering on top of the plain fill, used by themes.
+enum Effect: String, Codable {
+    /// Soft light and dark shadows that make the shape look pressed out of the page.
+    case neumorphic
+    /// A glass-like highlight and bright rim, strong.
+    case crystal
+    /// Frosted glass: a faint sheen and a light rim.
+    case glass
+    /// Hand-drawn diagonal strokes inside the shape (marker, chalk).
+    case hatch
+    /// Soft 3D: a light edge on the top-left and a shaded one on the bottom-right.
+    case clay
 }
 
 struct Shadow: Codable, Equatable {
@@ -206,6 +224,11 @@ struct Style: Codable, Equatable {
     var opacity: Double = 1
     var cornerRadius: Double = 0
     var text = TextFormat()
+    var effect: Effect? = nil
+    /// What a theme was last applied from: the shape's own color, and the fill the theme produced from it
+    /// (if the fill still matches, the original color is reused when another theme is applied).
+    var themeBase: RGBA? = nil
+    var themeFill: Fill? = nil
 
     static var textBox: Style {
         var s = Style()
@@ -240,6 +263,8 @@ enum Route: String, Codable, CaseIterable {
 
 enum HeadKind: String, Codable, CaseIterable {
     case none, filledArrow, openArrow, hollowTriangle, filledDiamond, hollowDiamond, filledCircle, hollowCircle, bar
+    /// Entity-relationship ("crow's foot") ends: many, one or many, zero or many, exactly one, zero or one.
+    case crowFoot, crowFootBar, crowFootCircle, doubleBar, circleBar
 
     var title: String {
         switch self {
@@ -252,6 +277,11 @@ enum HeadKind: String, Codable, CaseIterable {
         case .filledCircle: return "Filled Circle"
         case .hollowCircle: return "Hollow Circle"
         case .bar: return "Bar"
+        case .crowFoot: return "Many"
+        case .crowFootBar: return "One or Many"
+        case .crowFootCircle: return "Zero or Many"
+        case .doubleBar: return "Exactly One"
+        case .circleBar: return "Zero or One"
         }
     }
 }
@@ -364,6 +394,9 @@ struct Drawing: Codable, Equatable {
     var layers: [Layer] = [Layer(name: "Layer 1")]
     var shapes: [Shape] = []
     var connectors: [Connector] = []
+    /// The theme this drawing uses, embedded so the file looks the same on a Mac that doesn't have the theme installed.
+    /// It also styles new objects. Nil = the plain default look.
+    var theme: ThemeDefinition? = nil
 
     func layer(_ id: UUID) -> Layer? { layers.first { $0.id == id } }
 

@@ -6,7 +6,10 @@ extension AppDelegate {
         static let system = "arch.includeSystem", tests = "arch.includeTests", packages = "arch.includePackages"
     }
 
-    @objc func importXcodeProject(_ sender: Any?) {
+    @objc func importXcodeProject(_ sender: Any?) { chooseProjectForArchitecture(theme: ThemeLibrary.clean) }
+
+    /// Asks which project to map (and what to include), then opens the diagram drawn in `theme`.
+    func chooseProjectForArchitecture(theme: ThemeDefinition) {
         let defaults = UserDefaults.standard
         let panel = NSOpenPanel()
         panel.message = "Choose an Xcode project or workspace, a Swift package, a .NET solution or project, or a folder that contains one"
@@ -39,11 +42,11 @@ extension AppDelegate {
         defaults.set(options.includeSystemFrameworks, forKey: Key.system)
         defaults.set(options.includeTests, forKey: Key.tests)
         defaults.set(options.includeExternalPackages, forKey: Key.packages)
-        importArchitecture(from: url, options: options)
+        importArchitecture(from: url, options: options, theme: theme)
     }
 
     /// Analyzes in the background (a Swift package manifest has to be compiled to be read), then opens the diagram.
-    func importArchitecture(from url: URL, options: ArchitectureOptions) {
+    func importArchitecture(from url: URL, options: ArchitectureOptions, theme: ThemeDefinition = ThemeLibrary.clean) {
         let progress = ArchitectureProgress(title: "Analyzing \(url.lastPathComponent)…")
         progress.show()
         DispatchQueue.global(qos: .userInitiated).async {
@@ -54,7 +57,9 @@ extension AppDelegate {
                 progress.close()
                 switch outcome {
                 case .success(let graph):
-                    GraffleDocument.open(drawing: ArchitectureDrawing.build(graph), name: graph.title + " Architecture")
+                    var drawing = ArchitectureDrawing.build(graph)
+                    theme.apply(to: &drawing)
+                    GraffleDocument.open(drawing: drawing, name: graph.title + " Architecture")
                 case .failure(let error):
                     let alert = NSAlert()
                     alert.alertStyle = .warning

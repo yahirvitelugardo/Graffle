@@ -41,8 +41,8 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = true
         scroll.allowsMagnification = true
-        scroll.minMagnification = 0.25
-        scroll.maxMagnification = 4
+        scroll.minMagnification = CanvasView.minZoom
+        scroll.maxMagnification = CanvasView.maxZoom
         scroll.backgroundColor = NSColor(white: 0.85, alpha: 1)
         // Rulers in points, in canvas units (the canvas is flipped, so 0 is the top-left corner).
         scroll.hasHorizontalRuler = true
@@ -111,6 +111,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
             (.shape(.text), "textformat", "Text (T)"),
             (.connector, "arrow.up.right", "Connector (C)"),
             (.pen, "pencil.tip", "Pen (P)"),
+            (.zoom, "plus.magnifyingglass", "Zoom (Z): click to zoom in, Option-click to zoom out, drag to zoom to an area"),
         ]
         let stack = NSStackView()
         stack.orientation = .vertical
@@ -145,11 +146,15 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
 
     /// Connects the canvas to this window's inspector and tool palette.
     private func wire() {
-        canvas.onChange = { [weak self] in self?.inspector.refreshLayers() }
+        canvas.onChange = { [weak self] in
+            self?.inspector.refreshLayers()
+            self?.inspector.navigator.refresh()
+        }
         canvas.onActiveLayerChange = { [weak self] in self?.inspector.refreshLayers() }
         canvas.onSelectionChange = { [weak self] in self?.inspector.refresh() }
         canvas.onToolChange = { [weak self] in self?.syncToolButtons() }
         inspector.canvas = canvas
+        inspector.navigator.attach(canvas)
         inspector.refresh()
         syncToolButtons()
     }
@@ -170,6 +175,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     }
 
     // MARK: Window delegate
+
 
     /// The canvas registers its undo steps with the document, so the document knows when it has unsaved changes.
     func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? { document?.undoManager }
@@ -193,6 +199,8 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         case #selector(toggleSmartGuides(_:)): menuItem.state = canvas.smartGuides ? .on : .off
         case #selector(toggleGrid(_:)): menuItem.state = canvas.showGrid ? .on : .off
         case #selector(toggleSnap(_:)): menuItem.state = canvas.snapToGrid ? .on : .off
+        case #selector(toggleNavigator(_:)): menuItem.title = NavigatorView.isVisible ? "Hide Navigator" : "Show Navigator"
+        case #selector(zoomToSelection(_:)): return !canvas.selection.isEmpty
         case #selector(exportPNG(_:)), #selector(exportPDF(_:)), #selector(exportSVG(_:)): return canvas.exportBounds() != nil
         default: break
         }
@@ -201,18 +209,27 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
 
     // MARK: View actions
 
-    private func setZoom(_ m: CGFloat) {
-        scroll.magnification = min(max(m, scroll.minMagnification), scroll.maxMagnification)
-    }
+    private func setZoom(_ m: CGFloat) { canvas.setMagnification(m) }
 
     @objc func zoomIn(_ s: Any?) { setZoom(scroll.magnification * 1.25) }
     @objc func zoomOut(_ s: Any?) { setZoom(scroll.magnification / 1.25) }
     @objc func zoomActual(_ s: Any?) { setZoom(1) }
+    @objc func zoomToFit(_ s: Any?) { canvas.zoomToFitDiagram() }
+    @objc func zoomToSelection(_ s: Any?) { canvas.zoomToFitSelection() }
+    @objc func toggleNavigator(_ s: Any?) { NavigatorView.isVisible.toggle() }
     @objc func toggleRulers(_ s: Any?) {
         scroll.rulersVisible.toggle()
         UserDefaults.standard.set(scroll.rulersVisible, forKey: "showRulers")
     }
     @objc func toggleSmartGuides(_ s: Any?) { canvas.smartGuides.toggle() }
+    /// View → Theme…: pick a theme for this diagram from the same gallery as File → New….
+    @objc func chooseTheme(_ sender: Any?) {
+        guard let window else { return }
+        NewDocumentController.presentThemePicker(on: window, selected: canvas.drawing.theme ?? ThemeLibrary.clean) { [weak self] theme in
+            self?.canvas.applyTheme(theme)
+            self?.window?.makeFirstResponder(self?.canvas)
+        }
+    }
     @objc func toggleGrid(_ s: Any?) { canvas.showGrid.toggle() }
     @objc func toggleSnap(_ s: Any?) { canvas.snapToGrid.toggle() }
 

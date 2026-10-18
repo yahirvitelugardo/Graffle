@@ -310,6 +310,18 @@ enum SVGExport {
             case .bar:
                 let a = pt(0, len * 0.45), b = pt(0, -len * 0.45)
                 return "<line x1=\"\(SVGExport.n(a.x))\" y1=\"\(SVGExport.n(a.y))\" x2=\"\(SVGExport.n(b.x))\" y2=\"\(SVGExport.n(b.y))\" \(line)/>"
+            case .crowFoot, .crowFootBar, .crowFootCircle, .doubleBar, .circleBar:
+                let parts = Render.entityEnd(kind, len: len)
+                var out = ""
+                for (p, q) in parts.lines {
+                    let a = pt(p.x, p.y), b = pt(q.x, q.y)
+                    out += "<line x1=\"\(SVGExport.n(a.x))\" y1=\"\(SVGExport.n(a.y))\" x2=\"\(SVGExport.n(b.x))\" y2=\"\(SVGExport.n(b.y))\" \(line)/>"
+                }
+                if let c = parts.circle {
+                    let center = pt(c.back, 0)
+                    out += "<circle cx=\"\(SVGExport.n(center.x))\" cy=\"\(SVGExport.n(center.y))\" r=\"\(SVGExport.n(c.radius))\" \(hollow)/>"
+                }
+                return out
             }
         }
     }

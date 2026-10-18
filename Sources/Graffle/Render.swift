@@ -194,7 +194,41 @@ enum Render {
         case .bar:
             ctx.move(to: pt(0, len * 0.45)); ctx.addLine(to: pt(0, -len * 0.45))
             ctx.strokePath()
+        case .crowFoot, .crowFootBar, .crowFootCircle, .doubleBar, .circleBar:
+            let parts = entityEnd(kind, len: len)
+            for (a, b) in parts.lines {
+                ctx.move(to: pt(a.x, a.y)); ctx.addLine(to: pt(b.x, b.y))
+            }
+            ctx.strokePath()
+            if let c = parts.circle {
+                let center = pt(c.back, 0)
+                let circle = CGRect(x: center.x - c.radius, y: center.y - c.radius, width: c.radius * 2, height: c.radius * 2)
+                ctx.addEllipse(in: circle)
+                paintHollow()
+                ctx.addEllipse(in: circle)
+                ctx.strokePath()
+            }
         }
         ctx.restoreGState()
+    }
+
+    /// The strokes of an entity-relationship line end, as (back, side) offsets from the tip: each line is a pair of points,
+    /// plus an optional hollow circle (distance back from the tip, radius). Shared by the canvas and the SVG export.
+    static func entityEnd(_ kind: HeadKind, len: CGFloat) -> (lines: [(CGPoint, CGPoint)], circle: (back: CGFloat, radius: CGFloat)?) {
+        func bar(_ back: CGFloat) -> (CGPoint, CGPoint) { (CGPoint(x: back, y: len * 0.45), CGPoint(x: back, y: -len * 0.45)) }
+        let foot = len * 0.95
+        let toes: [(CGPoint, CGPoint)] = [
+            (CGPoint(x: foot, y: 0), CGPoint(x: 0, y: len * 0.5)),
+            (CGPoint(x: foot, y: 0), CGPoint(x: 0, y: 0)),
+            (CGPoint(x: foot, y: 0), CGPoint(x: 0, y: -len * 0.5)),
+        ]
+        switch kind {
+        case .crowFoot: return (toes, nil)
+        case .crowFootBar: return (toes + [bar(len * 1.3)], nil)
+        case .crowFootCircle: return (toes, (len * 1.55, len * 0.32))
+        case .doubleBar: return ([bar(len * 0.3), bar(len * 0.7)], nil)
+        case .circleBar: return ([bar(len * 0.3)], (len * 0.85, len * 0.32))
+        default: return ([], nil)
+        }
     }
 }

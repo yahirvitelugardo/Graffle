@@ -5,6 +5,8 @@ enum Tool: Equatable {
     case shape(ShapeKind)
     case connector
     case pen
+    /// Click to zoom in (Option-click to zoom out); drag a box to zoom to it.
+    case zoom
 }
 
 final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
@@ -80,6 +82,7 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
         case create(id: UUID, start: CGPoint, before: Drawing)
         case rubber(start: CGPoint, base: Set<UUID>)
         case connect(from: UUID)
+        case zoom(start: CGPoint, out: Bool)
     }
 
     private var drag = Drag.none
@@ -307,6 +310,14 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
         }
     }
 
+    // MARK: Themes
+
+    /// Restyles every shape and connector, and the page, to `theme` (one undo step), and keeps it for new objects.
+    func applyTheme(_ theme: ThemeDefinition) {
+        mutate("Apply Theme") { theme.apply(to: &$0) }
+        needsDisplay = true
+    }
+
     // MARK: Drawing
 
     override func draw(_ dirtyRect: NSRect) {
@@ -329,19 +340,23 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
     }
 
     private func drawGrid(_ ctx: CGContext, _ rect: CGRect) {
+        // A theme can recolor the grid so it contrasts with its shapes; otherwise it is the usual faint black.
+        let custom = drawing.theme?.gridColor.flatMap { RGBA(hex: $0) }
+        let minorLine = custom?.cg ?? NSColor(white: 0.0, alpha: 0.05).cgColor
+        let majorLine = custom.map { $0.with(alpha: min(1, $0.a * 1.8)).cg } ?? NSColor(white: 0.0, alpha: 0.09).cgColor
         let z = zoom
         let x0 = floor(rect.minX / gridSize) * gridSize, y0 = floor(rect.minY / gridSize) * gridSize
         ctx.saveGState()
         ctx.setLineWidth(1 / max(z, 0.01))
         if z >= 0.5 {
-            ctx.setStrokeColor(NSColor(white: 0.0, alpha: 0.05).cgColor)
+            ctx.setStrokeColor(minorLine)
             var x = x0
             while x <= rect.maxX { ctx.move(to: CGPoint(x: x, y: rect.minY)); ctx.addLine(to: CGPoint(x: x, y: rect.maxY)); x += gridSize }
             var y = y0
             while y <= rect.maxY { ctx.move(to: CGPoint(x: rect.minX, y: y)); ctx.addLine(to: CGPoint(x: rect.maxX, y: y)); y += gridSize }
             ctx.strokePath()
         }
-        ctx.setStrokeColor(NSColor(white: 0.0, alpha: 0.09).cgColor)
+        ctx.setStrokeColor(majorLine)
         let major = gridSize * 10
         var x = floor(rect.minX / major) * major
         while x <= rect.maxX { ctx.move(to: CGPoint(x: x, y: rect.minY)); ctx.addLine(to: CGPoint(x: x, y: rect.maxY)); x += major }
@@ -371,13 +386,30 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
         }
         ctx.saveGState()
         ctx.concatenate(s.rotationTransform)
-        Render.fill(ctx, path: path, fill: st.fill)
+        let seed = s.id.seed
+        let rough = st.stroke.roughness > 0 && st.stroke.visible
+        let outline = rough ? Render.roughened(path, amount: st.stroke.roughness, seed: seed) : path   // hand-drawn fills wobble with their edge
+        if st.fill.kind != .none, st.effect == .neumorphic {
+            Render.neumorphicShadows(ctx, path: outline, fill: st.fill, size: min(s.frame.width, s.frame.height))
+        }
+        Render.fill(ctx, path: outline, fill: st.fill)
+        switch st.effect {
+        case .crystal? where st.fill.kind != .none: Render.crystalGloss(ctx, path: path, frame: s.frame)
+        case .glass? where st.fill.kind != .none: Render.glassSheen(ctx, path: path, frame: s.frame)
+        case .clay? where st.fill.kind != .none: Render.clayShading(ctx, path: path)
+        case .hatch?: Render.hatch(ctx, path: outline, frame: s.frame, color: Render.hatchColor(for: st.fill), seed: seed)
+        default: break
+        }
         if st.stroke.visible && st.stroke.width > 0 {
-            ctx.saveGState()
-            Render.applyStroke(ctx, st.stroke)
-            ctx.addPath(path)
-            ctx.strokePath()
-            ctx.restoreGState()
+            if rough {
+                Render.strokeRough(ctx, path: path, stroke: st.stroke, seed: seed)
+            } else {
+                ctx.saveGState()
+                Render.applyStroke(ctx, st.stroke)
+                ctx.addPath(path)
+                ctx.strokePath()
+                ctx.restoreGState()
+            }
         }
         ctx.restoreGState()
         if shadowed { ctx.endTransparencyLayer() }
@@ -412,9 +444,13 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
                 ctx.setShadow(offset: st.shadow.vector,
                               blur: CGFloat(st.shadow.blur), color: st.shadow.color.cg)
             }
-            Render.applyStroke(ctx, st.stroke)
-            ctx.addPath(g.path)
-            ctx.strokePath()
+            if st.stroke.roughness > 0 {
+                Render.strokeRough(ctx, path: g.path, stroke: st.stroke, seed: c.id.seed)
+            } else {
+                Render.applyStroke(ctx, st.stroke)
+                ctx.addPath(g.path)
+                ctx.strokePath()
+            }
             ctx.restoreGState()
             Render.drawHead(ctx, kind: c.startHead, tip: g.startPoint, angle: g.startAngle, scale: c.headScale, stroke: st.stroke)
             Render.drawHead(ctx, kind: c.endHead, tip: g.endPoint, angle: g.endAngle, scale: c.headScale, stroke: st.stroke)
@@ -709,6 +745,8 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
             }
         case .pen:
             penMouseDown(p, event)
+        case .zoom:
+            drag = .zoom(start: p, out: event.modifierFlags.contains(.option))
         }
     }
 
@@ -772,6 +810,7 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
         } else {
             s.style = defaultStyle
             if kind == .rounded && s.style.cornerRadius == 0 { s.style.cornerRadius = 12 }
+            if let theme = drawing.theme { theme.apply(to: &s.style, kind: kind) }
         }
         let before = drawing
         drawing.shapes.append(s)
@@ -902,6 +941,9 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
             let inside = drawing.shapes.filter { usable.contains($0.layer) && $0.worldBounds.intersects(r) }.map(\.id)
             selection = base.union(expandGroups(Set(inside)))
 
+        case .zoom(let start, _):
+            rubberRect = normalizedRect(start, p)
+
         case .connect(let from):
             connectPoint = p
             if let i = shapeIndex(at: p), drawing.shapes[i].id != from {
@@ -962,10 +1004,18 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
             if let to = connectTarget {
                 var c = Connector(layer: activeLayerID, from: from, to: to)
                 c.style = defaultConnectorStyle
+                if let theme = drawing.theme { theme.applyToConnector(&c.style) }
                 mutate("Add Connector") { $0.connectors.append(c) }
                 selection = [c.id]
             }
             tool = .select
+
+        case .zoom(let start, let out):
+            let p = convert(event.locationInWindow, from: nil)
+            let r = rubberRect ?? normalizedRect(start, p)
+            rubberRect = nil
+            if out || r.width < 6 || r.height < 6 { zoomStep(out: out, around: p) } else { zoom(toFit: r) }
+            needsDisplay = true
 
         case .rubber, .none:
             break
@@ -1031,6 +1081,7 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
             case "t": tool = .shape(.text)
             case "c": tool = .connector
             case "p": tool = .pen
+            case "z": tool = .zoom
             default: super.keyDown(with: event)
             }
         }
@@ -1277,6 +1328,7 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
         if !closed { style.fill.kind = .none }          // an open curve has nothing to fill
         style.stroke.visible = true
         if style.stroke.width <= 0 { style.stroke.width = 1.5 }
+        if let theme = drawing.theme { theme.apply(to: &style, kind: .path) }
         let shape = Shape(layer: activeLayerID, kind: .path, frame: o.frame, style: style, outline: o.segments)
         mutate("Draw Path") { $0.shapes.append(shape) }
         if thenSelect {
@@ -1300,6 +1352,7 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
 
     override func resetCursorRects() {
         if tool == .pen { addCursorRect(visibleRect, cursor: .crosshair) }
+        if tool == .zoom { addCursorRect(visibleRect, cursor: Self.zoomCursor) }
     }
 
     private func drawAnchor(_ p: CGPoint, selected: Bool, hot: Bool = false, in ctx: CGContext) {

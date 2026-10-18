@@ -25,7 +25,8 @@ enum ArchitectureDrawing {
         return CGSize(width: w, height: node.kind == .system ? 40 : 62)
     }
 
-    static func build(_ graph: ArchitectureGraph) -> Drawing {
+    /// `decorations: false` leaves out the title and legend (used for small previews).
+    static func build(_ graph: ArchitectureGraph, decorations: Bool = true) -> Drawing {
         var drawing = Drawing()
         let connectorsLayer = Layer(name: "Dependencies")
         let targets = Layer(name: "Targets"), packages = Layer(name: "Packages"), system = Layer(name: "System")
@@ -40,7 +41,7 @@ enum ArchitectureDrawing {
             edges: graph.edges.map { GraphLayout.Edge(from: $0.from, to: $0.to) },
             bottom: [Set(nodes.filter { $0.kind == .externalPackage }.map(\.id)), Set(nodes.filter { $0.kind == .system }.map(\.id))])
 
-        let top: CGFloat = 80                       // room for the title
+        let top: CGFloat = decorations ? 80 : 0     // room for the title
         var shapeOf: [String: UUID] = [:]
         for n in nodes {
             guard let origin = layout.origins[n.id], let size = sizes[n.id] else { continue }
@@ -86,11 +87,12 @@ enum ArchitectureDrawing {
             drawing.connectors.append(Connector(layer: connectorsLayer.id, from: a, to: b, route: .rounded, style: style, text: text))
         }
 
+        guard decorations else { return shifted(drawing) }
         // Title and legend.
         var titleStyle = Style.textBox
         titleStyle.text.size = 26; titleStyle.text.bold = true; titleStyle.text.hAlign = .left
         titleStyle.text.color = RGBA(0.12, 0.14, 0.18)
-        drawing.shapes.append(Shape(layer: notes.id, kind: .text, frame: CGRect(x: 60, y: 20, width: 900, height: 36), style: titleStyle, text: graph.title))
+        drawing.shapes.append(Shape(layer: notes.id, kind: .text, frame: CGRect(x: 60, y: 14, width: 900, height: 46), style: titleStyle, text: graph.title))
         var subStyle = Style.textBox
         subStyle.text.size = 12; subStyle.text.hAlign = .left; subStyle.text.color = RGBA(0.40, 0.42, 0.48)
         let counts = "\(nodes.count) modules · \(graph.edges.count) dependencies"
@@ -110,6 +112,16 @@ enum ArchitectureDrawing {
             let w = CGFloat(k.title.count) * 8 + 24
             drawing.shapes.append(Shape(layer: notes.id, kind: .text, frame: CGRect(x: x + 26, y: y - 6, width: w, height: 26), style: t, text: k.title))
             x += 26 + w + 14
+        }
+        return shifted(drawing)
+    }
+
+    /// Leaves room above and to the left, for themes whose page extends around the diagram (frames, orbs).
+    static func shifted(_ drawing: Drawing) -> Drawing {
+        var drawing = drawing
+        for i in drawing.shapes.indices {
+            drawing.shapes[i].frame.origin.x += 130
+            drawing.shapes[i].frame.origin.y += 100
         }
         return drawing
     }
