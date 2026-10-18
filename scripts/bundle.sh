@@ -66,6 +66,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
+# The Quick Look extension (the space-bar preview in Finder) goes in first, signed on its own; the app is signed after it.
+./scripts/build-quicklook.sh "$APP"
+
 codesign --force --sign - "$APP" >/dev/null 2>&1 || true
+# Fail loudly if the result isn't a valid signature, including the extension inside it.
+codesign --verify --deep --strict "$APP" || { echo "The app's signature is not valid" >&2; exit 1; }
 touch "$APP"   # nudges Finder and the Dock to refresh the icon
 echo "Built $APP"

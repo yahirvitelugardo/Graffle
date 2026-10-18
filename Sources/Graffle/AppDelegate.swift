@@ -1,4 +1,5 @@
 import AppKit
+import PDFKit
 import UniformTypeIdentifiers
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -12,7 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var snapshotter: SVGSnapshotter?
 
     private static let developerFlags: Set<String> = [
-        "--render-sample", "--render-about", "--import-to-png", "--svg-to-png", "--selftest", "--debug-window",
+        "--render-sample", "--render-about", "--import-to-png", "--architecture-to-png", "--svg-to-png", "--selftest", "--debug-window",
     ]
     private var isDeveloperRun: Bool { !AppDelegate.developerFlags.isDisjoint(with: CommandLine.arguments) }
 
@@ -37,6 +38,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 exit(0)
             }
             return
+        }
+        if let i = CommandLine.arguments.firstIndex(of: "--architecture-to-png"), i + 2 < CommandLine.arguments.count {
+            // Dev helper: analyze a project and export its architecture diagram as PNG.
+            let a = CommandLine.arguments
+            var options = ArchitectureOptions()
+            options.includeSystemFrameworks = a.contains("--system")
+            do {
+                let g = try ArchitectureImporter.analyze(URL(fileURLWithPath: a[i + 1]), options: options)
+                let d = ArchitectureDrawing.build(g)
+                canvas.frame = CGRect(origin: .zero, size: CanvasView.canvasSize)
+                canvas.load(d)
+                if let png = canvas.pngData() { try? png.write(to: URL(fileURLWithPath: a[i + 2])) }
+                print("architecture:", g.nodes.count, "nodes,", g.edges.count, "edges")
+            } catch { print("failed:", error.localizedDescription) }
+            exit(0)
         }
         if let i = CommandLine.arguments.firstIndex(of: "--import-to-png"), i + 2 < CommandLine.arguments.count {
             // Dev helper: import an SVG into the canvas and export it as PNG, to compare with a browser rendering.
@@ -163,6 +179,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item("Revert to Saved", #selector(NSDocument.revertToSaved(_:))),
             sep(),
             item("Import SVG…", #selector(DocumentWindowController.importSVG(_:)), "i", [.command, .shift]),
+            item("Import Project Architecture…", #selector(AppDelegate.importXcodeProject(_:))),
             item("Export as PNG…", #selector(DocumentWindowController.exportPNG(_:)), "e", [.command, .shift]),
             item("Export as PDF…", #selector(DocumentWindowController.exportPDF(_:)), "p", [.command, .shift]),
             item("Export as SVG…", #selector(DocumentWindowController.exportSVG(_:)), "e", [.command, .option]),
@@ -2411,7 +2428,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return evmMentions == 2 && !text.contains("Diseñada") && text.contains("designed and developed by EVM")
                 && text.contains("All credit for this app goes to EVM")
                 && linkTarget == URL(string: "https://evm.mx") && About.website.absoluteString == "https://evm.mx"
-                && name == "Graffle" && hasCredits && copyright == "Copyright © 2026 EVM. All rights reserved."
+                && name == "Graffle" && hasCredits && copyright == "Copyright © 2026 EVM. Released under the MIT License." && text.contains("open-source")
                 && !About.version.isEmpty
         }))
         // ---- Documents: many open at once, each with its own window
@@ -2459,6 +2476,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 && action(window, "Bring All to Front") == #selector(NSApplication.arrangeInFront(_:))
                 && NSApp.windowsMenu === window                                  // so AppKit lists the open documents in it
         }))
+        steps.append(contentsOf: self.architectureSteps(bundled: bundled, tempDir: tempDir))
         var twoDocs: (a: GraffleDocument, b: GraffleDocument)?
         steps.append(("documents: New opens independent windows, each with its own canvas and inspector", {
             guard bundled else { print("      (skipped: needs the .app bundle)"); return true }
@@ -2616,6 +2634,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let ok = finished && doc == nil && failure != nil
             NSDocumentController.shared.documents.forEach { $0.close() }          // leave nothing open for the steps below
             return ok
+        }))
+        // ---- Quick Look preview (the space bar in Finder)
+        steps.append(("quick look: a diagram previews as a one-page vector PDF with its real content", {
+            var d = Drawing()
+            let layer = d.layers[0].id
+            var red = Shape(layer: layer, kind: .rectangle, frame: CGRect(x: 100, y: 100, width: 200, height: 120))
+            red.style.fill.color = RGBA(1, 0, 0); red.style.stroke.visible = false
+            var blue = Shape(layer: layer, kind: .ellipse, frame: CGRect(x: 400, y: 150, width: 160, height: 160))
+            blue.style.fill.color = RGBA(0, 0, 1); blue.style.stroke.visible = false
+            let hidden = Layer(name: "Hidden", visible: false)
+            d.layers.append(hidden)
+            var ghost = Shape(layer: hidden.id, kind: .rectangle, frame: CGRect(x: 100, y: 500, width: 300, height: 100))
+            ghost.style.fill.color = RGBA(0, 1, 0); ghost.style.stroke.visible = false
+            d.shapes = [red, blue, ghost]
+
+            let result = DiagramPreview.render(d)
+            guard let pdf = PDFDocument(data: result.pdf), let page = pdf.page(at: 0) else { return false }
+            let box = page.bounds(for: .mediaBox)
+            // The page is the content (plus a margin), not the whole 4000 x 3000 canvas, and hidden layers stay out of it.
+            let cropped = box.width < 700 && box.height < 400 && box.width > 450 && box.height > 250
+
+            let image = page.thumbnail(of: CGSize(width: box.width * 2, height: box.height * 2), for: .mediaBox)
+            guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else { return false }
+            func pixel(_ x: CGFloat, _ y: CGFloat) -> NSColor {   // in diagram points; the page starts 24pt before the content
+                (rep.colorAt(x: Int((x - 76) * 2), y: Int((y - 76) * 2)) ?? .black).usingColorSpace(.sRGB) ?? .black
+            }
+            let r = pixel(200, 160), b = pixel(480, 230), blank = pixel(90, 90)
+            let hasRed = r.redComponent > 0.8 && r.greenComponent < 0.3 && r.blueComponent < 0.3
+            let hasBlue = b.blueComponent > 0.8 && b.redComponent < 0.3
+            let white = blank.redComponent > 0.95 && blank.greenComponent > 0.95 && blank.blueComponent > 0.95
+            return pdf.pageCount == 1 && cropped && hasRed && hasBlue && white && !result.isEmpty && result.size.width <= 1200
+        }))
+        steps.append(("quick look: a big diagram is scaled to a sensible window, an empty one shows a note, a bad file is refused", {
+            let fitted = DiagramPreview.fit(CGSize(width: 3000, height: 1000))
+            let small = DiagramPreview.fit(CGSize(width: 300, height: 200))
+            let scaledDown = fitted.width <= 1200 && fitted.height <= 900 && abs(fitted.width / fitted.height - 3) < 0.01
+            let notEnlarged = small == CGSize(width: 300, height: 200)
+
+            let empty = DiagramPreview.render(Drawing())
+            let emptyOK = empty.isEmpty && PDFDocument(data: empty.pdf)?.pageCount == 1
+                && PDFDocument(data: empty.pdf)?.string?.contains("Empty diagram") == true
+
+            let dir = FileManager.default.temporaryDirectory
+            let good = dir.appendingPathComponent("preview-\(UUID().uuidString).graf")
+            let bad = dir.appendingPathComponent("preview-\(UUID().uuidString).graf")
+            var d = Drawing()
+            d.shapes = [Shape(layer: d.layers[0].id, kind: .rectangle, frame: CGRect(x: 10, y: 10, width: 80, height: 40))]
+            try? JSONEncoder().encode(d).write(to: good)
+            try? Data("not a diagram".utf8).write(to: bad)
+            let fromFile = (try? DiagramPreview.render(fileAt: good))?.isEmpty == false
+            var refused = false
+            do { _ = try DiagramPreview.render(fileAt: bad) } catch { refused = true }
+            try? FileManager.default.removeItem(at: good); try? FileManager.default.removeItem(at: bad)
+            return scaledDown && notEnlarged && emptyOK && fromFile && refused
         }))
         steps.append(("PNG and PDF export", { cv.pngData() != nil && cv.pdfData() != nil }))
 

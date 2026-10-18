@@ -81,6 +81,19 @@ final class GraffleDocument: NSDocument {
         show(d)
     }
 
+    /// Opens `drawing` as a new, unsaved diagram called `name` (what an import does).
+    @discardableResult
+    static func open(drawing: Drawing, name: String) -> GraffleDocument {
+        let doc = GraffleDocument()
+        doc.loaded = drawing
+        doc.importedName = name
+        doc.fileType = diagramType
+        NSDocumentController.shared.addDocument(doc)
+        doc.makeWindowControllers()
+        doc.showWindows()
+        return doc
+    }
+
     /// Keeps `drawing` as the document's contents, and shows it if the window already exists (Revert to Saved).
     private func show(_ drawing: Drawing) {
         loaded = drawing

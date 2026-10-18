@@ -11,6 +11,15 @@
 	</dict>
 	<key>files2</key>
 	<dict>
+		<key>PlugIns/GraffleQuickLook.appex</key>
+		<dict>
+			<key>cdhash</key>
+			<data>
+			Qq/Ct+brEQ/JGOH+qK5m+cWOkHA=
+			</data>
+			<key>requirement</key>
+			<string>cdhash H"42afc2b7e6eb110fc918e1fea8ae66f9c58e9070"</string>
+		</dict>
 		<key>Resources/AppIcon.icns</key>
 		<dict>
 			<key>hash2</key>

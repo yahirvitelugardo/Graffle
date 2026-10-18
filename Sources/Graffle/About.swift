@@ -4,7 +4,7 @@ import AppKit
 enum About {
     static let company = "EVM"
     static let website = URL(string: "https://evm.mx")!
-    static let copyright = "Copyright © 2026 EVM. All rights reserved."
+    static let copyright = "Copyright © 2026 EVM. Released under the MIT License."
 
     static var version: String {
         (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0.1"
@@ -38,7 +38,9 @@ enum About {
         out.append(NSAttributedString(string: "All credit for this app goes to ", attributes: body))
         out.append(NSAttributedString(string: company, attributes: strong))
         out.append(NSAttributedString(string: ".\n", attributes: body))
-        out.append(NSAttributedString(string: "evm.mx", attributes: link))   // the panel itself prints the copyright line below
+        out.append(NSAttributedString(string: "evm.mx", attributes: link))
+        out.append(NSAttributedString(string: "\n", attributes: body))
+        out.append(NSAttributedString(string: "Free and open-source software.", attributes: body))   // the panel itself prints the copyright line below
         return out
     }
 

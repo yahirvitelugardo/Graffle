@@ -80,13 +80,13 @@ hdiutil verify "$FINAL" >/dev/null
 # Mount the finished image read-only and make sure everything the installer window relies on is really there.
 hdiutil attach "$FINAL" -readonly -noverify -noautoopen >/dev/null
 MISSING=""
-for f in "Graffle.app/Contents/MacOS/Graffle" "Applications" ".background/background.png" ".VolumeIcon.icns" ".DS_Store"; do
+for f in "Graffle.app/Contents/MacOS/Graffle" "Graffle.app/Contents/PlugIns/GraffleQuickLook.appex/Contents/MacOS/GraffleQuickLook" "Applications" ".background/background.png" ".VolumeIcon.icns" ".DS_Store"; do
   [ -e "$MNT/$f" ] || [ -L "$MNT/$f" ] || MISSING="$MISSING $f"
 done
-codesign -v "$MNT/Graffle.app" 2>/dev/null || MISSING="$MISSING (valid app signature)"
+codesign --verify --deep --strict "$MNT/Graffle.app" 2>/dev/null || MISSING="$MISSING (valid app + extension signature)"
 hdiutil detach "$MNT" >/dev/null 2>&1 || true
 if [ -n "$MISSING" ]; then echo "The DMG is missing:$MISSING" >&2; exit 1; fi
-echo "Verified: app, Applications link, background, volume icon, window layout"
+echo "Verified: app, Quick Look extension, Applications link, background, volume icon, window layout"
 ( cd build && shasum -a 256 "$(basename "$FINAL")" > "$(basename "$FINAL").sha256" )
 echo "Built $FINAL ($(du -h "$FINAL" | cut -f1))"
 cat "$FINAL.sha256"
