@@ -13,7 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var snapshotter: SVGSnapshotter?
 
     private static let developerFlags: Set<String> = [
-        "--render-sample", "--render-about", "--import-to-png", "--architecture-to-png", "--render-chooser", "--render-navigator", "--classes-to-png", "--starter-to-png", "--svg-to-png", "--selftest", "--debug-window",
+        "--render-sample", "--render-about", "--import-to-png", "--architecture-to-png", "--render-chooser", "--render-navigator", "--classes-to-png", "--render-dbwizard", "--starter-to-png", "--svg-to-png", "--selftest", "--debug-window",
     ]
     private var isDeveloperRun: Bool { !AppDelegate.developerFlags.isDisjoint(with: CommandLine.arguments) }
 
@@ -51,6 +51,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 print("starter:", starter.rawValue, d.shapes.count, "shapes,", d.connectors.count, "connectors")
             }
             exit(0)
+        }
+        if let i = CommandLine.arguments.firstIndex(of: "--render-dbwizard"), i + 2 < CommandLine.arguments.count {
+            // Dev helper: snapshot the database wizard (step 1, or step 2 on the given SQLite file).
+            let out = CommandLine.arguments[i + 1], file = CommandLine.arguments[i + 2]
+            let w = DatabaseWizard()
+            w.present { _ in }
+            var c = DatabaseConnection(); c.kind = file.hasSuffix(".sql") ? .sqlScript : .sqlite; c.path = file
+            w.fill(c)
+            let snap: (String) -> Void = { name in
+                if let v = w.window.contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
+                    v.cacheDisplay(in: v.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: name))
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                snap(out + ".1.png")
+                w.connect { snap(out + ".2.png"); exit(0) }
+            }
+            return
         }
         if let i = CommandLine.arguments.firstIndex(of: "--classes-to-png"), i + 2 < CommandLine.arguments.count {
             // Dev helper: read a project's types and export the class diagram as PNG.
@@ -244,6 +263,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .starter:
             guard let starter = choice.template.starter else { return }
             var drawing = Starters.drawing(starter)
+            // Entity-relationship diagrams can be filled from a real database; cancelling keeps the example tables.
+            if starter == .entityRelationship, let picked = DatabaseWizard.run() {
+                drawing = ERBuilder.build(picked.schema, tables: picked.tableIDs)
+            }
             choice.theme.apply(to: &drawing)
             GraffleDocument.openNew(drawing: drawing)
         }
@@ -2633,6 +2656,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         steps.append(contentsOf: self.architectureSteps(bundled: bundled, tempDir: tempDir))
         steps.append(contentsOf: self.navigatorSteps())
         steps.append(contentsOf: self.classDiagramSteps(tempDir: tempDir))
+        steps.append(contentsOf: self.databaseSteps(tempDir: tempDir))
         steps.append(contentsOf: self.starterSteps(bundled: bundled))
         steps.append(contentsOf: self.themeSteps(cv: cv, drag: drag, bundled: bundled, tempDir: tempDir))
         var twoDocs: (a: GraffleDocument, b: GraffleDocument)?
