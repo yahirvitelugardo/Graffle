@@ -38,7 +38,7 @@ final class SidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate,
         let label = NSTextField(labelWithString: title)
         label.font = .systemFont(ofSize: 11.5, weight: .semibold)
         label.textColor = Tok.textSecondary
-        let plus = IconButton(symbol: "plus", label: addLabel, tip: tip ?? addLabel, size: 22, pointSize: 11)
+        let plus = IconButton(symbol: "plus", label: addLabel, tip: tip ?? addLabel, size: 28, pointSize: 12)
         plus.target = self; plus.action = add
         plus.isEnabled = addEnabled
         let row = NSStackView(views: [label, NSView(), plus])
@@ -454,8 +454,8 @@ final class SidebarCell: NSTableCellView {
     var node: SidebarView.Node?
     private let icon = NSImageView()
     let nameField = NSTextField()
-    private let eye = IconButton(symbol: "eye", label: "Hide", size: 24, pointSize: 12)
-    private let lock = IconButton(symbol: "lock.open", label: "Lock", size: 24, pointSize: 12)
+    private let eye = IconButton(symbol: "eye", label: "Hide", size: 28, pointSize: 12)
+    private let lock = IconButton(symbol: "lock.open", label: "Lock", size: 28, pointSize: 12)
     private var bold = false
     private var isLayerRow = false
 

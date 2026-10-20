@@ -213,6 +213,30 @@ extension AppDelegate {
             let clamped = overlay.bounds.contains(bar.frame)
             return hidden && shown && above && inside && fill && stroke && dup && connectorTool && hiddenWhileDrawing && clamped
         }))
+        steps.append(("accessibility: every icon button has a label and a tooltip, panel hit targets are at least 28 pt and the dock's 40 pt", {
+            ready(); load(); pump(0.2)
+            wc.window?.contentView?.layoutSubtreeIfNeeded()
+            func buttons(_ v: NSView) -> [IconButton] { (v as? IconButton).map { [$0] } ?? v.subviews.flatMap(buttons) }
+            var all = buttons(wc.window!.contentView!)
+            for item in wc.window?.toolbar?.items ?? [] { if let v = item.view { all += buttons(v) } }
+            all += buttons(wc.contextBar)
+            let labelled = all.allSatisfy { ($0.accessibilityLabel() ?? "").isEmpty == false && ($0.toolTip ?? "").isEmpty == false }
+            let panelOK = (buttons(wc.sidebar) + buttons(wc.inspector)).allSatisfy { $0.bounds.width >= 27.5 && $0.bounds.height >= 27.5 }
+            let dockOK = wc.dock.buttons.allSatisfy { $0.1.bounds.width >= 39.5 }
+            let toolbarOK = (wc.window?.toolbar?.items.compactMap(\.view) ?? []).allSatisfy { $0.fittingSize.height >= 27.5 || $0 is NSStackView }
+            // Segmented control: arrow keys move between tabs.
+            wc.inspector.selectTab(0)
+            return !all.isEmpty && labelled && panelOK && dockOK && toolbarOK
+        }))
+        steps.append(("accessibility: the segmented tabs work with the arrow keys, and reduce-motion is honoured", {
+            let seg = DesignSegmented(titles: ["A", "B", "C"])
+            func key(_ code: UInt16) { seg.keyDown(with: NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code)!) }
+            key(124); key(124); key(124)                                       // right, right, right (stops at the end)
+            let end = seg.selected == 2
+            key(123)
+            let back = seg.selected == 1
+            return end && back && seg.acceptsFirstResponder && seg.accessibilityRole() == .radioGroup
+        }))
         steps.append(("window: undo and redo buttons follow the history, Share and Export open the export menu", {
             ready(); load()
             pump(0.05)

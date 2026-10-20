@@ -114,7 +114,7 @@ final class ContextBar: NSView {
         let rect = canvas.convert(bounds, to: container)
         container.layoutSubtreeIfNeeded()
         let size = fittingSize
-        let margin: CGFloat = 52                                                      // room for the rotate knob and handles
+        let margin: CGFloat = 46                                                      // room for the rotate knob (above) or the size badge (below)
         var x = rect.midX - size.width / 2
         // `container` is not flipped: y grows upward, so "above the selection" is a larger y.
         var y = rect.maxY + margin
