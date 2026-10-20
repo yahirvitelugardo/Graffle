@@ -178,6 +178,41 @@ extension AppDelegate {
             let pills = subs(z).compactMap { $0 as? FloatingSurface }
             return pills.count == 2 && pills.allSatisfy { $0.frame.height > 20 } && z.bounds.height > 130
         }))
+        steps.append(("canvas: a contextual toolbar floats above the selection, stays on screen, and acts on it", {
+            ready(); load()
+            wc.canvas.setMagnification(1)
+            wc.canvas.scrollCenter(to: CGPoint(x: 260, y: 200))
+            pump(0.2)
+            let bar = wc.contextBar!
+            wc.canvas.selection = []
+            let hidden = bar.isHidden
+            wc.canvas.selection = [a.id]
+            pump(0.1)
+            wc.updateContextBar()
+            let shown = !bar.isHidden
+            let overlay = bar.superview!
+            let selRect = wc.canvas.convert(wc.canvas.drawing.shapes.first { $0.id == a.id }!.worldBounds, to: overlay)
+            let above = bar.frame.minY >= selRect.maxY - 1 || bar.frame.maxY <= selRect.minY + 1                  // not on top of the shape
+            let inside = overlay.bounds.contains(bar.frame)
+            bar.choose(RGBA(1, 0, 0), for: .fill)
+            let fill = wc.canvas.drawing.shapes.first { $0.id == a.id }?.style.fill.color.r == 1
+            bar.choose(RGBA(0, 0, 1), for: .stroke)
+            let stroke = wc.canvas.drawing.shapes.first { $0.id == a.id }?.style.stroke.color.b == 1
+            let before = wc.canvas.drawing.shapes.count
+            bar.press("Duplicate")
+            let dup = wc.canvas.drawing.shapes.count == before + 1
+            wc.canvas.selection = [a.id]
+            bar.press("Add connector")
+            let connectorTool = wc.canvas.tool == .connector
+            wc.updateContextBar()
+            let hiddenWhileDrawing = bar.isHidden
+            wc.canvas.tool = .select
+            // Near the top edge it flips below the selection.
+            wc.canvas.scrollCenter(to: CGPoint(x: 160, y: 120))
+            wc.canvas.selection = [a.id]; wc.updateContextBar()
+            let clamped = overlay.bounds.contains(bar.frame)
+            return hidden && shown && above && inside && fill && stroke && dup && connectorTool && hiddenWhileDrawing && clamped
+        }))
         steps.append(("window: undo and redo buttons follow the history, Share and Export open the export menu", {
             ready(); load()
             pump(0.05)

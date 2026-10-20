@@ -10,6 +10,8 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     let sidebar = SidebarView()
     let dock = ToolDock()
     let zoomOverlay = ZoomOverlay()
+    private(set) var contextBar: ContextBar!
+    private var overlayView: NSView!
 
     private let sidebarCard = SurfaceView(frame: .zero)
     private let canvasCard = SurfaceView(frame: .zero)
@@ -90,6 +92,11 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         canvasCard.addSubview(overlay)
         overlay.addSubview(dock)
         overlay.addSubview(zoomOverlay)
+        overlayView = overlay
+        contextBar = ContextBar(canvas: canvas)
+        contextBar.translatesAutoresizingMaskIntoConstraints = true
+        contextBar.isHidden = true
+        overlay.addSubview(contextBar)
 
         sidebar.translatesAutoresizingMaskIntoConstraints = false
         sidebarCard.addSubview(sidebar)
@@ -274,9 +281,10 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
             sidebar.reload()
             zoomOverlay.refresh()
             updateUndoButtons()
+            updateContextBar()
         }
         canvas.onActiveLayerChange = { [weak self] in self?.sidebar.reload() }
-        canvas.onSelectionChange = { [weak self] in self?.inspector.refresh(); self?.sidebar.syncSelection() }
+        canvas.onSelectionChange = { [weak self] in self?.inspector.refresh(); self?.sidebar.syncSelection(); self?.updateContextBar() }
         canvas.onToolChange = { [weak self] in self?.syncToolButtons() }
         dock.onPick = { [weak self] tool in
             self?.canvas.tool = tool
@@ -302,13 +310,21 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         redoButton.alphaValue = redoButton.isEnabled ? 1 : 0.4
     }
 
-    private func syncToolButtons() { dock.sync(canvas.tool) }
+    private func syncToolButtons() { dock.sync(canvas.tool); updateContextBar() }
+
+    /// Places the contextual toolbar above the selection (and hides it when there is nothing to act on).
+    func updateContextBar() {
+        guard contextBar != nil, overlayView != nil else { return }
+        contextBar.update(in: overlayView)
+    }
 
     /// Focuses the canvas once the window is on screen.
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
         window?.makeFirstResponder(canvas)
         zoomOverlay.observe()
+        let clip = scroll.contentView
+        NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: clip, queue: .main) { [weak self] _ in self?.updateContextBar() }
         applySidebar(animated: false)
     }
 

@@ -1227,6 +1227,9 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
         return false
     }
 
+    /// True while a text field is open over the canvas.
+    var isEditingText: Bool { editor != nil }
+
     /// Starts editing the text of the selected shape or connector (the contextual toolbar's "Edit text").
     func editSelectedText() {
         if selection.count == 1, let id = selection.first {
