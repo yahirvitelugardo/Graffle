@@ -326,9 +326,12 @@ struct Shape: Codable, Identifiable, Equatable {
     var outline: [PathSegment]? = nil
     /// A locked shape can still be selected and restyled, but not moved, resized, rotated, deleted or edited.
     var locked = false
+    /// What the layers list and the inspector call it; empty means "name it after its text or its kind".
+    var name: String? = nil
 
     init(id: UUID = UUID(), layer: UUID, kind: ShapeKind, frame: CGRect, style: Style = Style(), text: String = "",
-         rotation: Double = 0, group: UUID? = nil, outline: [PathSegment]? = nil, locked: Bool = false) {
+         rotation: Double = 0, group: UUID? = nil, outline: [PathSegment]? = nil, locked: Bool = false, name: String? = nil) {
+        self.name = name
         self.id = id; self.layer = layer; self.kind = kind; self.frame = frame
         self.style = style; self.text = text; self.rotation = rotation; self.group = group; self.outline = outline
         self.locked = locked
@@ -343,6 +346,7 @@ struct Shape: Codable, Identifiable, Equatable {
         frame = try c.decode(CGRect.self, forKey: .frame)
         style = try c.decode(Style.self, forKey: .style)
         text = try c.decode(String.self, forKey: .text)
+        name = try c.decodeIfPresent(String.self, forKey: .name)
         rotation = try c.decodeIfPresent(Double.self, forKey: .rotation) ?? 0
         group = try c.decodeIfPresent(UUID.self, forKey: .group)
         outline = try c.decodeIfPresent([PathSegment].self, forKey: .outline)
@@ -652,4 +656,33 @@ struct ConnectorGeometry {
         return ConnectorGeometry(path: path, startPoint: p1, startAngle: angle(from: startRef, to: p1),
                                  endPoint: p2, endAngle: angle(from: endRef, to: p2), labelPoint: label)
     }
+}
+
+// MARK: - Names shown in lists
+
+extension ShapeKind {
+    var title: String {
+        switch self {
+        case .rectangle: return "Rectangle"
+        case .rounded: return "Rounded rectangle"
+        case .ellipse: return "Ellipse"
+        case .diamond: return "Diamond"
+        case .triangle: return "Triangle"
+        case .text: return "Text"
+        case .path: return "Path"
+        }
+    }
+}
+
+extension Shape {
+    /// The name in the layers list: the given name, else the first line of its text, else its kind.
+    var displayName: String {
+        if let n = name?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty { return n }
+        let line = text.split(whereSeparator: \.isNewline).first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        return line.isEmpty ? kind.title : line
+    }
+}
+
+extension Connector {
+    var displayName: String { text.trimmingCharacters(in: .whitespaces).isEmpty ? "Connector" : text.trimmingCharacters(in: .whitespaces) }
 }

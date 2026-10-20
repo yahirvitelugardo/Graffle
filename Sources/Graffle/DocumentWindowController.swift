@@ -1,20 +1,42 @@
 import AppKit
 import UniformTypeIdentifiers
 
-/// One document window: the tool palette, the canvas with its rulers and zoom, and the inspector.
-/// Every document has its own, so any number can be open at once, each with independent state.
-final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMenuItemValidation {
+/// One document window: a unified toolbar over three rounded cards (sidebar, canvas, inspector), with the tool dock and the
+/// minimap/zoom floating over the canvas. Every document has its own, so any number can be open at once.
+final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMenuItemValidation, NSToolbarDelegate {
     let canvas = CanvasView(frame: NSRect(origin: .zero, size: CanvasView.canvasSize))
     let scroll = NSScrollView()
     let inspector = InspectorView()
-    private var toolButtons: [(Tool, NSButton)] = []
+    let sidebar = SidebarView()
+    let dock = ToolDock()
+    let zoomOverlay = ZoomOverlay()
+
+    private let sidebarCard = SurfaceView(frame: .zero)
+    private let canvasCard = SurfaceView(frame: .zero)
+    private let inspectorCard = SurfaceView(frame: .zero)
+    private var sidebarWidth: NSLayoutConstraint!
+    private var sidebarGap: NSLayoutConstraint!
+    private static let sidebarKey = "ui.sidebarVisible"
+    /// Whether the user wants the sidebar (it also folds away by itself in a narrow window).
+    private(set) var sidebarWanted = UserDefaults.standard.object(forKey: sidebarKey) as? Bool ?? true
+    private(set) var sidebarShown = true
+
+    private let titleButton = NSButton()
+    private let pageLabel = NSTextField(labelWithString: "Page 1")
+    private let undoButton = IconButton(symbol: "arrow.uturn.backward", label: "Undo", tip: "Undo (⌘Z)", size: 32, pointSize: 15)
+    private let redoButton = IconButton(symbol: "arrow.uturn.forward", label: "Redo", tip: "Redo (⇧⌘Z)", size: 32, pointSize: 15)
+    private let exportButton = IconButton(symbol: "square.and.arrow.up", label: "Export", tip: "Export", size: 32, pointSize: 15)
+    private let shareButton = PillButton(title: "Share")
+    private let sidebarToggle = IconButton(symbol: "sidebar.left", label: "Toggle sidebar", tip: "Show or hide the sidebar", size: 30, pointSize: 15)
 
     init() {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820),
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable],
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1320, height: 840),
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                               backing: .buffered, defer: false)
-        window.minSize = NSSize(width: 800, height: 500)
+        window.minSize = NSSize(width: 760, height: 520)
         window.tabbingMode = .automatic           // separate windows by default; tabs if the system setting says so
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
         super.init(window: window)
         window.delegate = self
         shouldCascadeWindows = true               // each new window opens a little down and to the right
@@ -29,149 +51,265 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     // MARK: Building
 
     private func build(_ window: NSWindow) {
-        let root = NSView()
-        // Let Auto Layout drive the window size: preferred 1280x820 (low priority), 800x500 minimum.
+        let root = SurfaceView(frame: .zero)
+        root.fill = Tok.windowBG; root.outline = nil; root.radius = 0
         root.translatesAutoresizingMaskIntoConstraints = false
         window.contentView = root
 
-        let palette = buildPalette()
-        palette.translatesAutoresizingMaskIntoConstraints = false
+        // The three cards.
+        sidebarCard.fill = Tok.panelBG; sidebarCard.outline = Tok.panelOutline; sidebarCard.radius = Tok.Radius.window
+        inspectorCard.fill = Tok.panelBG; inspectorCard.outline = Tok.panelOutline; inspectorCard.radius = Tok.Radius.window
+        canvasCard.fill = Tok.canvasBG; canvasCard.outline = Tok.panelOutline; canvasCard.radius = Tok.Radius.window
+        for card in [sidebarCard, canvasCard, inspectorCard] {
+            card.translatesAutoresizingMaskIntoConstraints = false
+            card.layer?.masksToBounds = true
+            root.addSubview(card)
+        }
 
         scroll.documentView = canvas
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = true
+        scroll.scrollerStyle = .overlay
         scroll.allowsMagnification = true
         scroll.minMagnification = CanvasView.minZoom
         scroll.maxMagnification = CanvasView.maxZoom
-        scroll.backgroundColor = NSColor(white: 0.85, alpha: 1)
-        // Rulers in points, in canvas units (the canvas is flipped, so 0 is the top-left corner).
+        scroll.drawsBackground = true
+        scroll.backgroundColor = Tok.canvasBG
+        // Rulers in points, in canvas units (the canvas is flipped, so 0 is the top-left corner). Hidden unless asked for.
         scroll.hasHorizontalRuler = true
         scroll.hasVerticalRuler = true
         scroll.horizontalRulerView?.measurementUnits = .points
         scroll.verticalRulerView?.measurementUnits = .points
         scroll.rulersVisible = UserDefaults.standard.bool(forKey: "showRulers")
         scroll.translatesAutoresizingMaskIntoConstraints = false
+        canvasCard.addSubview(scroll)
 
+        // Floating over the canvas.
+        let overlay = PassthroughView()
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        canvasCard.addSubview(overlay)
+        overlay.addSubview(dock)
+        overlay.addSubview(zoomOverlay)
+
+        sidebar.translatesAutoresizingMaskIntoConstraints = false
+        sidebarCard.addSubview(sidebar)
         inspector.translatesAutoresizingMaskIntoConstraints = false
+        inspectorCard.addSubview(inspector)
 
-        let left = NSBox(); left.boxType = .separator; left.translatesAutoresizingMaskIntoConstraints = false
-        let right = NSBox(); right.boxType = .separator; right.translatesAutoresizingMaskIntoConstraints = false
-
-        [palette, scroll, inspector, left, right].forEach(root.addSubview)
-
-        // Without a preferred size the window shrinks to the Auto Layout minimum (a 1 pt tall content view).
-        let preferredW = root.widthAnchor.constraint(equalToConstant: 1280)
-        let preferredH = root.heightAnchor.constraint(equalToConstant: 820)
-        preferredW.priority = .defaultLow
-        preferredH.priority = .defaultLow
+        let gutter = Tok.Space.gutter
+        sidebarWidth = sidebarCard.widthAnchor.constraint(equalToConstant: 236)
+        sidebarGap = canvasCard.leadingAnchor.constraint(equalTo: sidebarCard.trailingAnchor, constant: Tok.Space.cardGap)
+        let guide = root.safeAreaLayoutGuide
+        // Without a preferred size the window shrinks to the Auto Layout minimum.
+        let preferredW = root.widthAnchor.constraint(equalToConstant: 1320), preferredH = root.heightAnchor.constraint(equalToConstant: 840)
+        preferredW.priority = .defaultLow; preferredH.priority = .defaultLow
         NSLayoutConstraint.activate([
             preferredW, preferredH,
-            root.widthAnchor.constraint(greaterThanOrEqualToConstant: 800),
-            root.heightAnchor.constraint(greaterThanOrEqualToConstant: 500),
+            root.widthAnchor.constraint(greaterThanOrEqualToConstant: 760), root.heightAnchor.constraint(greaterThanOrEqualToConstant: 520),
 
-            palette.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            palette.topAnchor.constraint(equalTo: root.topAnchor),
-            palette.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            palette.widthAnchor.constraint(equalToConstant: 52),
+            sidebarCard.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: gutter),
+            sidebarCard.topAnchor.constraint(equalTo: guide.topAnchor), sidebarCard.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -gutter),
+            sidebarWidth, sidebarGap,
+            canvasCard.topAnchor.constraint(equalTo: guide.topAnchor), canvasCard.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -gutter),
+            inspectorCard.leadingAnchor.constraint(equalTo: canvasCard.trailingAnchor, constant: Tok.Space.cardGap),
+            inspectorCard.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -gutter),
+            inspectorCard.topAnchor.constraint(equalTo: guide.topAnchor), inspectorCard.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -gutter),
+            inspectorCard.widthAnchor.constraint(equalToConstant: 280),
 
-            left.leadingAnchor.constraint(equalTo: palette.trailingAnchor),
-            left.topAnchor.constraint(equalTo: root.topAnchor),
-            left.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            left.widthAnchor.constraint(equalToConstant: 1),
+            sidebar.leadingAnchor.constraint(equalTo: sidebarCard.leadingAnchor), sidebar.trailingAnchor.constraint(equalTo: sidebarCard.trailingAnchor),
+            sidebar.topAnchor.constraint(equalTo: sidebarCard.topAnchor), sidebar.bottomAnchor.constraint(equalTo: sidebarCard.bottomAnchor),
+            inspector.leadingAnchor.constraint(equalTo: inspectorCard.leadingAnchor), inspector.trailingAnchor.constraint(equalTo: inspectorCard.trailingAnchor),
+            inspector.topAnchor.constraint(equalTo: inspectorCard.topAnchor), inspector.bottomAnchor.constraint(equalTo: inspectorCard.bottomAnchor),
 
-            scroll.leadingAnchor.constraint(equalTo: left.trailingAnchor),
-            scroll.topAnchor.constraint(equalTo: root.topAnchor),
-            scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            scroll.trailingAnchor.constraint(equalTo: right.leadingAnchor),
-
-            right.trailingAnchor.constraint(equalTo: inspector.leadingAnchor),
-            right.topAnchor.constraint(equalTo: root.topAnchor),
-            right.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            right.widthAnchor.constraint(equalToConstant: 1),
-
-            inspector.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            inspector.topAnchor.constraint(equalTo: root.topAnchor),
-            inspector.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            inspector.widthAnchor.constraint(equalToConstant: 260),
+            scroll.leadingAnchor.constraint(equalTo: canvasCard.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: canvasCard.trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: canvasCard.topAnchor), scroll.bottomAnchor.constraint(equalTo: canvasCard.bottomAnchor),
+            overlay.leadingAnchor.constraint(equalTo: canvasCard.leadingAnchor), overlay.trailingAnchor.constraint(equalTo: canvasCard.trailingAnchor),
+            overlay.topAnchor.constraint(equalTo: canvasCard.topAnchor), overlay.bottomAnchor.constraint(equalTo: canvasCard.bottomAnchor),
+            dock.bottomAnchor.constraint(equalTo: overlay.bottomAnchor, constant: -20),
+            zoomOverlay.trailingAnchor.constraint(equalTo: overlay.trailingAnchor, constant: -16), zoomOverlay.bottomAnchor.constraint(equalTo: overlay.bottomAnchor, constant: -20),
         ])
 
-        // Size the window only now that the constraints exist.
-        window.setContentSize(NSSize(width: 1280, height: 820))
+        // The dock is centered, but gives way to the minimap and zoom pill when the canvas is narrow.
+        let center = dock.centerXAnchor.constraint(equalTo: overlay.centerXAnchor)
+        center.priority = NSLayoutConstraint.Priority(40)         // below the window's minimum-size fitting: centering never forces the window wider
+        let clear = dock.trailingAnchor.constraint(lessThanOrEqualTo: zoomOverlay.leadingAnchor, constant: -12)
+        let edge = dock.leadingAnchor.constraint(greaterThanOrEqualTo: overlay.leadingAnchor, constant: 8)
+        edge.priority = NSLayoutConstraint.Priority(30)
+        NSLayoutConstraint.activate([center, clear, edge])
+        buildToolbar(window)
+        window.setContentSize(NSSize(width: 1320, height: 840))
         window.center()
+        applySidebar(animated: false)
     }
 
-    private func buildPalette() -> NSView {
-        let tools: [(Tool, String, String)] = [
-            (.select, "cursorarrow", "Select (V)"),
-            (.shape(.rectangle), "rectangle", "Rectangle (R)"),
-            (.shape(.rounded), "app", "Rounded Rectangle (U)"),
-            (.shape(.ellipse), "circle", "Ellipse (E)"),
-            (.shape(.diamond), "diamond", "Diamond (D)"),
-            (.shape(.triangle), "triangle", "Triangle (G)"),
-            (.shape(.text), "textformat", "Text (T)"),
-            (.connector, "arrow.up.right", "Connector (C)"),
-            (.pen, "pencil.tip", "Pen (P)"),
-            (.zoom, "plus.magnifyingglass", "Zoom (Z): click to zoom in, Option-click to zoom out, drag to zoom to an area"),
-        ]
-        let stack = NSStackView()
-        stack.orientation = .vertical
-        stack.spacing = 6
-        stack.edgeInsets = NSEdgeInsets(top: 12, left: 8, bottom: 12, right: 8)
+    // MARK: Toolbar
 
-        for (i, t) in tools.enumerated() {
-            let b = NSButton()
-            b.image = NSImage(systemSymbolName: t.1, accessibilityDescription: t.2)
-            b.toolTip = t.2
-            b.setButtonType(.pushOnPushOff)
-            b.bezelStyle = .texturedRounded
-            b.imagePosition = .imageOnly
-            b.tag = i
-            b.target = self
-            b.action = #selector(toolPicked(_:))
-            b.widthAnchor.constraint(equalToConstant: 36).isActive = true
-            b.heightAnchor.constraint(equalToConstant: 32).isActive = true
-            stack.addArrangedSubview(b)
-            toolButtons.append((t.0, b))
+    private enum Item {
+        static let sidebar = NSToolbarItem.Identifier("sidebar"), title = NSToolbarItem.Identifier("title")
+        static let undo = NSToolbarItem.Identifier("undo"), redo = NSToolbarItem.Identifier("redo")
+        static let export = NSToolbarItem.Identifier("export"), share = NSToolbarItem.Identifier("share")
+    }
+
+    private func buildToolbar(_ window: NSWindow) {
+        titleButton.isBordered = false
+        titleButton.setButtonType(.momentaryChange)
+        titleButton.target = self; titleButton.action = #selector(showTitleMenu(_:))
+        titleButton.alignment = .left
+        titleButton.imagePosition = .imageTrailing
+        titleButton.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 9, weight: .bold))
+        titleButton.setAccessibilityLabel("Document menu")
+        titleButton.toolTip = "Rename, duplicate or move this document"
+        pageLabel.font = .systemFont(ofSize: 11.5); pageLabel.textColor = Tok.textSecondary
+        sidebarToggle.target = self; sidebarToggle.action = #selector(toggleSidebar(_:))
+        undoButton.target = canvas; undoButton.action = #selector(CanvasView.undo(_:))
+        redoButton.target = canvas; redoButton.action = #selector(CanvasView.redo(_:))
+        exportButton.target = self; exportButton.action = #selector(showExportMenu(_:))
+        shareButton.target = self; shareButton.action = #selector(showExportMenu(_:))
+        shareButton.toolTip = "Export this diagram as PNG, PDF or SVG"
+        shareButton.setAccessibilityLabel("Share: export this diagram")
+
+        let toolbar = NSToolbar(identifier: "GraffleDocument")
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = false
+        window.toolbar = toolbar
+        window.toolbarStyle = .unified
+        updateTitle()
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [Item.sidebar, Item.title, .flexibleSpace, Item.undo, Item.redo, Item.export, Item.share]
+    }
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { toolbarDefaultItemIdentifiers(toolbar) }
+
+    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        let item = NSToolbarItem(itemIdentifier: id)
+        item.isBordered = false
+        switch id {
+        case Item.sidebar: item.view = sidebarToggle; item.label = "Sidebar"
+        case Item.title:
+            let stack = NSStackView(views: [titleButton, pageLabel])
+            stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 0
+            stack.setHuggingPriority(.defaultLow, for: .horizontal)
+            item.view = stack; item.label = "Document"
+        case Item.undo: item.view = undoButton; item.label = "Undo"
+        case Item.redo: item.view = redoButton; item.label = "Redo"
+        case Item.export: item.view = exportButton; item.label = "Export"
+        case Item.share: item.view = shareButton; item.label = "Share"
+        default: return nil
         }
-        let wrapper = NSView()
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        wrapper.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: wrapper.topAnchor),
-            stack.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
-        ])
-        return wrapper
+        return item
     }
 
-    /// Connects the canvas to this window's inspector and tool palette.
+    /// The document's name (a menu button) and its page under it.
+    func updateTitle() {
+        let raw: String = (document?.displayName as String?) ?? window?.title ?? ""
+        let name = raw.isEmpty ? "Untitled" : raw
+        titleButton.attributedTitle = NSAttributedString(string: name + " ", attributes: [.font: Tok.Font.title(), .foregroundColor: Tok.textPrimary, .kern: -0.14])
+        titleButton.sizeToFit()
+        titleButton.contentTintColor = Tok.textPrimary
+    }
+
+    override func synchronizeWindowTitleWithDocumentName() { super.synchronizeWindowTitleWithDocumentName(); updateTitle() }
+
+    @objc private func showTitleMenu(_ sender: NSButton) {
+        let menu = NSMenu()
+        for (title, action) in [("Rename…", #selector(NSDocument.rename(_:))), ("Duplicate", #selector(NSDocument.duplicate(_:))),
+                                ("Move To…", #selector(NSDocument.move(_:))), ("Revert to Saved", #selector(NSDocument.revertToSaved(_:))),
+                                ("Browse All Versions…", #selector(NSDocument.browseVersions(_:)))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = document
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 2), in: sender)
+    }
+
+    @objc private func showExportMenu(_ sender: NSView) {
+        let menu = NSMenu()
+        for (title, action) in [("Export as PNG…", #selector(exportPNG(_:))), ("Export as PDF…", #selector(exportPDF(_:))), ("Export as SVG…", #selector(exportSVG(_:)))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: ""); item.target = self
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
+    }
+
+    // MARK: Sidebar
+
+    @objc func toggleSidebar(_ sender: Any?) {
+        sidebarWanted.toggle()
+        UserDefaults.standard.set(sidebarWanted, forKey: Self.sidebarKey)
+        applySidebar(animated: true)
+    }
+
+    /// Shows or folds the sidebar: it is hidden when the user turned it off, and also when the window is too narrow for three panels.
+    func applySidebar(animated: Bool) {
+        let narrow = (window?.contentView?.bounds.width ?? 1320) < 1000
+        let show = sidebarWanted && !narrow
+        guard show != sidebarShown || !animated else { return }
+        sidebarShown = show
+        let apply = { [self] in
+            sidebarWidth.constant = show ? 236 : 0
+            sidebarGap.constant = show ? Tok.Space.cardGap : 0
+            sidebarCard.alphaValue = show ? 1 : 0
+        }
+        sidebarCard.isHidden = false
+        if animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.18; ctx.allowsImplicitAnimation = true
+                apply(); window?.contentView?.layoutSubtreeIfNeeded()
+            }, completionHandler: { [self] in sidebarCard.isHidden = !show })
+        } else {
+            apply(); sidebarCard.isHidden = !show
+        }
+    }
+
+    func windowDidResize(_ notification: Notification) { applySidebar(animated: true) }
+
+    // MARK: Wiring
+
+    /// Connects the canvas to this window's sidebar, inspector, dock and overlays.
     private func wire() {
         canvas.onChange = { [weak self] in
-            self?.inspector.refreshLayers()
-            self?.inspector.navigator.refresh()
+            guard let self else { return }
+            sidebar.reload()
+            zoomOverlay.refresh()
+            updateUndoButtons()
         }
-        canvas.onActiveLayerChange = { [weak self] in self?.inspector.refreshLayers() }
-        canvas.onSelectionChange = { [weak self] in self?.inspector.refresh() }
+        canvas.onActiveLayerChange = { [weak self] in self?.sidebar.reload() }
+        canvas.onSelectionChange = { [weak self] in self?.inspector.refresh(); self?.sidebar.syncSelection() }
         canvas.onToolChange = { [weak self] in self?.syncToolButtons() }
+        dock.onPick = { [weak self] tool in
+            self?.canvas.tool = tool
+            self?.window?.makeFirstResponder(self?.canvas)
+        }
         inspector.canvas = canvas
-        inspector.navigator.attach(canvas)
+        sidebar.canvas = canvas
+        zoomOverlay.attach(canvas)
+        zoomOverlay.isHidden = !NavigatorPrefs.isVisible
+        NotificationCenter.default.addObserver(forName: .navigatorVisibilityChanged, object: nil, queue: nil) { [weak self] _ in
+            self?.zoomOverlay.isHidden = !NavigatorPrefs.isVisible
+        }
         inspector.refresh()
         syncToolButtons()
+        updateUndoButtons()
     }
 
-    @objc private func toolPicked(_ sender: NSButton) {
-        canvas.tool = toolButtons[sender.tag].0
-        window?.makeFirstResponder(canvas)
+    /// Undo and Redo dim when there is nothing to undo or redo.
+    func updateUndoButtons() {
+        undoButton.isEnabled = canvas.undoManager?.canUndo ?? false
+        redoButton.isEnabled = canvas.undoManager?.canRedo ?? false
+        undoButton.alphaValue = undoButton.isEnabled ? 1 : 0.4
+        redoButton.alphaValue = redoButton.isEnabled ? 1 : 0.4
     }
 
-    private func syncToolButtons() {
-        for (tool, button) in toolButtons { button.state = (tool == canvas.tool) ? .on : .off }
-    }
+    private func syncToolButtons() { dock.sync(canvas.tool) }
 
     /// Focuses the canvas once the window is on screen.
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
         window?.makeFirstResponder(canvas)
+        zoomOverlay.observe()
+        applySidebar(animated: false)
     }
 
     // MARK: Window delegate
@@ -199,7 +337,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         case #selector(toggleSmartGuides(_:)): menuItem.state = canvas.smartGuides ? .on : .off
         case #selector(toggleGrid(_:)): menuItem.state = canvas.showGrid ? .on : .off
         case #selector(toggleSnap(_:)): menuItem.state = canvas.snapToGrid ? .on : .off
-        case #selector(toggleNavigator(_:)): menuItem.title = NavigatorView.isVisible ? "Hide Navigator" : "Show Navigator"
+        case #selector(toggleNavigator(_:)): menuItem.title = NavigatorPrefs.isVisible ? "Hide Navigator" : "Show Navigator"
         case #selector(zoomToSelection(_:)): return !canvas.selection.isEmpty
         case #selector(exportPNG(_:)), #selector(exportPDF(_:)), #selector(exportSVG(_:)): return canvas.exportBounds() != nil
         default: break
@@ -216,7 +354,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     @objc func zoomActual(_ s: Any?) { setZoom(1) }
     @objc func zoomToFit(_ s: Any?) { canvas.zoomToFitDiagram() }
     @objc func zoomToSelection(_ s: Any?) { canvas.zoomToFitSelection() }
-    @objc func toggleNavigator(_ s: Any?) { NavigatorView.isVisible.toggle() }
+    @objc func toggleNavigator(_ s: Any?) { NavigatorPrefs.isVisible.toggle() }
     @objc func toggleRulers(_ s: Any?) {
         scroll.rulersVisible.toggle()
         UserDefaults.standard.set(scroll.rulersVisible, forKey: "showRulers")

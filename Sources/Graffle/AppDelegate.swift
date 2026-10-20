@@ -91,7 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             // Dev helper: show the Navigator over a sample diagram, snapshot the panel to PNG and quit.
             let out = CommandLine.arguments[i + 1]
             let wc = DocumentWindowController()
-            wc.window?.setContentSize(NSSize(width: 1000, height: 700))
+            wc.window?.setContentSize(NSSize(width: 1320, height: 840))
             wc.showWindow(nil)
             var d = ThemePreview.architectureSample()
             ThemeLibrary.theme(id: "soft-ui")?.apply(to: &d)
@@ -99,16 +99,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             wc.scroll.magnification = 2
             wc.canvas.scrollCenter(to: CGPoint(x: 300, y: 250))
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                wc.inspector.layoutSubtreeIfNeeded()
-                let view = wc.inspector.navigator
-                if let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
-                    view.cacheDisplay(in: view.bounds, to: rep)
-                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out))
-                    print("navigator", view.bounds.size)
-                }
-                if let win = wc.window, let content = win.contentView, let rep = content.bitmapImageRepForCachingDisplay(in: content.bounds) {
-                    content.cacheDisplay(in: content.bounds, to: rep)
-                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out + ".window.png"))
+                if let win = wc.window {
+                    // The composited window as the screen shows it (blurs included), when the system still offers that.
+                    let shot = Process()
+                    shot.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+                    shot.arguments = ["-x", "-o", "-l", "\(win.windowNumber)", out]
+                    try? shot.run(); shot.waitUntilExit()
+                    print("window", win.frame.size)
                 }
                 exit(0)
             }
@@ -216,7 +213,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
                 print("window", window.frame, "content", window.contentView!.frame, "fitting", window.contentView!.fittingSize)
                 print("scroll", scroll.frame, "inspector", inspector.frame, "visible", window.isVisible)
-                print("layers table visible:", !inspector.isLayersPanelHidden, "rows", inspector.layerRowCount)
+                
                 scroll.rulersVisible = true
                 scroll.layoutSubtreeIfNeeded()
                 print("rulers:", scroll.horizontalRulerView.map { "h=\($0.frame.size) units=\($0.measurementUnits.rawValue)" } ?? "none",
@@ -1113,7 +1110,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 && shape == ["Styles", "Fill", "Line", "Shadow", "Object", "Text"]
                 && conn == ["Styles", "Line", "Shadow", "Object", "Text", "Connector"]
                 && mixed == ["Styles", "Fill", "Line", "Shadow", "Object", "Text", "Connector"]
-                && !insp.isLayersPanelHidden
         }))
         steps.append(("every choice in a style menu has its own distinct picture", {
             func distinct(_ images: [NSImage]) -> Bool {
@@ -2676,6 +2672,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         steps.append(contentsOf: self.navigatorSteps())
         steps.append(contentsOf: self.classDiagramSteps(tempDir: tempDir))
         steps.append(contentsOf: self.uiSteps())
+        steps.append(contentsOf: self.windowSteps())
         steps.append(contentsOf: self.databaseSteps(tempDir: tempDir))
         steps.append(contentsOf: self.starterSteps(bundled: bundled))
         steps.append(contentsOf: self.themeSteps(cv: cv, drag: drag, bundled: bundled, tempDir: tempDir))

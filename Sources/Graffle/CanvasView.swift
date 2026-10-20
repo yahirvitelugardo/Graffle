@@ -7,6 +7,8 @@ enum Tool: Equatable {
     case pen
     /// Click to zoom in (Option-click to zoom out); drag a box to zoom to it.
     case zoom
+    /// Drag to scroll the document.
+    case pan
 }
 
 final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
@@ -83,6 +85,7 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
         case rubber(start: CGPoint, base: Set<UUID>)
         case connect(from: UUID)
         case zoom(start: CGPoint, out: Bool)
+        case pan(startWindow: CGPoint, origin: CGPoint)
     }
 
     private var drag = Drag.none
@@ -210,6 +213,48 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
             guard let i = d.layers.firstIndex(where: { $0.id == id }) else { return }
             if let v = visible { d.layers[i].visible = v }
             if let l = locked { d.layers[i].locked = l }
+        }
+    }
+
+    // MARK: Objects (used by the layers list)
+
+    func renameObject(_ id: UUID, to name: String) {
+        mutate("Rename") { d in
+            guard let i = d.shapes.firstIndex(where: { $0.id == id }) else { return }
+            let t = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            d.shapes[i].name = t.isEmpty ? nil : t
+        }
+    }
+
+    func setObject(_ id: UUID, locked: Bool) {
+        mutate("Lock/Unlock") { d in
+            if let i = d.shapes.firstIndex(where: { $0.id == id }) { d.shapes[i].locked = locked }
+            else if let i = d.connectors.firstIndex(where: { $0.id == id }) { d.connectors[i].locked = locked }
+        }
+    }
+
+    /// Places shape `id` on `layer`, directly above (`above`) or behind `target` in drawing order; with no target it goes to the front of that layer.
+    func moveObject(_ id: UUID, layer: UUID, relativeTo target: UUID?, above: Bool) {
+        mutate("Reorder") { d in
+            guard let from = d.shapes.firstIndex(where: { $0.id == id }), d.layers.contains(where: { $0.id == layer }), id != target else { return }
+            var s = d.shapes.remove(at: from)
+            s.layer = layer
+            if let target, let t = d.shapes.firstIndex(where: { $0.id == target }) {
+                d.shapes.insert(s, at: above ? t + 1 : t)
+            } else if let last = d.shapes.lastIndex(where: { $0.layer == layer }) {
+                d.shapes.insert(s, at: last + 1)
+            } else {
+                d.shapes.append(s)
+            }
+        }
+    }
+
+    /// Moves layer `id` to sit at `index` in the layers array (0 = back).
+    func moveLayer(_ id: UUID, toIndex index: Int) {
+        mutate("Reorder Layers") { d in
+            guard let from = d.layers.firstIndex(where: { $0.id == id }) else { return }
+            let l = d.layers.remove(at: from)
+            d.layers.insert(l, at: max(0, min(index, d.layers.count)))
         }
     }
 
@@ -741,6 +786,11 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
             penMouseDown(p, event)
         case .zoom:
             drag = .zoom(start: p, out: event.modifierFlags.contains(.option))
+        case .pan:
+            if let clip = enclosingScrollView?.contentView {
+                drag = .pan(startWindow: event.locationInWindow, origin: clip.bounds.origin)
+                NSCursor.closedHand.set()
+            }
         }
     }
 
@@ -938,6 +988,17 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
         case .zoom(let start, _):
             rubberRect = normalizedRect(start, p)
 
+        case .pan(let startWindow, let origin):
+            if let scroll = enclosingScrollView {
+                let z = max(scroll.magnification, 0.01)
+                let dx = (event.locationInWindow.x - startWindow.x) / z, dy = (startWindow.y - event.locationInWindow.y) / z * (isFlipped ? -1 : 1)
+                let visible = scroll.documentVisibleRect
+                var o = CGPoint(x: origin.x - dx, y: origin.y - (isFlipped ? -dy : dy))
+                o.x = min(max(o.x, 0), max(bounds.width - visible.width, 0)); o.y = min(max(o.y, 0), max(bounds.height - visible.height, 0))
+                scroll.contentView.scroll(to: o)
+                scroll.reflectScrolledClipView(scroll.contentView)
+            }
+
         case .connect(let from):
             connectPoint = p
             if let i = shapeIndex(at: p), drawing.shapes[i].id != from {
@@ -1011,6 +1072,9 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
             if out || r.width < 6 || r.height < 6 { zoomStep(out: out, around: p) } else { zoom(toFit: r) }
             needsDisplay = true
 
+        case .pan:
+            NSCursor.openHand.set()
+
         case .rubber, .none:
             break
         }
@@ -1076,6 +1140,9 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
             case "c": tool = .connector
             case "p": tool = .pen
             case "z": tool = .zoom
+            case "h": tool = .pan
+            case "o": tool = .shape(.ellipse)
+            case "y": tool = .shape(.triangle)
             default: super.keyDown(with: event)
             }
         }
@@ -1347,6 +1414,7 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
     override func resetCursorRects() {
         if tool == .pen { addCursorRect(visibleRect, cursor: .crosshair) }
         if tool == .zoom { addCursorRect(visibleRect, cursor: Self.zoomCursor) }
+        if tool == .pan { addCursorRect(visibleRect, cursor: .openHand) }
     }
 
     private func drawAnchor(_ p: CGPoint, selected: Bool, hot: Bool = false, in ctx: CGContext) {

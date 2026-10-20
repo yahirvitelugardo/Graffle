@@ -102,91 +102,67 @@ extension AppDelegate {
                 && action("Hide Navigator") == #selector(DocumentWindowController.toggleNavigator(_:))
         }))
         var wasVisible = true
-        steps.append(("navigator: it sits at the top of the sidebar, above Styles, and shows what is visible", {
+        steps.append(("navigator: the minimap floats over the canvas and shows what is visible", {
             prepare()
-            wasVisible = NavigatorView.isVisible
-            NavigatorView.isVisible = true
-            wc.inspector.layoutSubtreeIfNeeded()
-            let nav = wc.inspector.navigator
+            wasVisible = NavigatorPrefs.isVisible
+            NavigatorPrefs.isVisible = true
+            wc.window?.contentView?.layoutSubtreeIfNeeded()
+            let zo = wc.zoomOverlay
             wc.scroll.magnification = 1
             wc.canvas.scrollCenter(to: CGPoint(x: 1000, y: 800))
-            nav.refresh()
-            let above = nav.convert(nav.bounds, to: nil).midY > wc.inspector.paletteControl.convert(wc.inspector.paletteControl.bounds, to: nil).midY
-            let box = nav.map.viewportRect
+            zo.refresh()
+            let box = zo.map.viewportRect
             let v = visible()
             let sameShape = box.width > 5 && near(box.width / box.height, v.width / v.height, 0.05)
-            let sameSpot = near(nav.map.canvasPoint(CGPoint(x: box.midX, y: box.midY)).x, v.midX, 4)
-            return wc.inspector.navigatorShown && above && sameShape && sameSpot && nav.field.stringValue == "100%" && nav.slider.isEnabled
+            let sameSpot = near(zo.map.canvasPoint(CGPoint(x: box.midX, y: box.midY)).x, v.midX, 4)
+            let size = zo.map.bounds.size
+            let insideCanvas = wc.zoomOverlay.convert(wc.zoomOverlay.bounds, to: nil).maxX <= (wc.window?.contentView?.bounds.width ?? 0)
+            return !zo.isHidden && sameShape && sameSpot && near(size.width, 168, 1) && near(size.height, 104, 1) && insideCanvas && zo.percentText == "100%"
         }))
-        steps.append(("navigator: the slider has a small and a large rectangle at its ends, not triangles", {
-            func ink(_ image: NSImage) -> Int {
-                guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else { return -1 }
-                var n = 0
-                for y in 0..<rep.pixelsHigh { for x in 0..<rep.pixelsWide where (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.3 { n += 1 } }
-                return n
-            }
-            let small = NavigatorView.rectangleIcon(NSSize(width: 8, height: 6)), large = NavigatorView.rectangleIcon(NSSize(width: 17, height: 13))
-            return small.isTemplate && large.isTemplate && ink(small) > 0 && ink(large) > ink(small) * 2
-        }))
-        steps.append(("navigator: the slider, the percentage field and the step icons zoom the document around its center", {
-            let nav = wc.inspector.navigator
+        steps.append(("navigator: the zoom pill zooms out and in around the center, and the percentage fits the diagram", {
+            let zo = wc.zoomOverlay
             wc.scroll.magnification = 1
             wc.canvas.scrollCenter(to: CGPoint(x: 1000, y: 800))
             let center = CGPoint(x: visible().midX, y: visible().midY)
-            nav.slider.doubleValue = log2(4)
-            nav.slider.sendAction(nav.slider.action, to: nav.slider.target)
-            let slid = near(wc.scroll.magnification, 4, 0.02) && near(visible().midX, center.x, 3) && near(visible().midY, center.y, 3)
-            nav.field.stringValue = "250%"
-            nav.field.sendAction(nav.field.action, to: nav.field.target)
-            let typed = near(wc.scroll.magnification, 2.5, 0.02) && nav.field.stringValue == "250%" && abs(nav.slider.doubleValue - log2(2.5)) < 0.02
-            nav.field.stringValue = "99999"
-            nav.field.sendAction(nav.field.action, to: nav.field.target)
-            let clamped = near(wc.scroll.magnification, 8, 0.01) && nav.field.stringValue == "800%"
-            nav.field.stringValue = "abc"
-            nav.field.sendAction(nav.field.action, to: nav.field.target)
-            let ignored = near(wc.scroll.magnification, 8, 0.01)
+            zo.pressZoomIn()
+            let zin = near(wc.scroll.magnification, 2, 0.01) && near(visible().midX, center.x, 3) && zo.percentText == "200%"
+            zo.pressZoomOut(); zo.pressZoomOut()
+            let zout = near(wc.scroll.magnification, 0.5, 0.01) && zo.percentText == "50%"
+            zo.pressPercent()
+            let fitted = visible().insetBy(dx: -1, dy: -1).contains(CGRect(x: 600, y: 500, width: 1000, height: 500))
             wc.scroll.magnification = 1
-            return slid && typed && clamped && ignored
+            return zin && zout && fitted
         }))
-        steps.append(("navigator: clicking or dragging the map scrolls the document there", {
-            let nav = wc.inspector.navigator
-            wc.inspector.layoutSubtreeIfNeeded()
+        steps.append(("navigator: clicking or dragging the minimap scrolls the document there", {
+            let zo = wc.zoomOverlay
+            wc.window?.contentView?.layoutSubtreeIfNeeded()
             wc.scroll.magnification = 2
             wc.canvas.scrollCenter(to: CGPoint(x: 700, y: 600))
-            nav.refresh()
+            zo.refresh()
             func click(_ p: CGPoint, drag: Bool = false) -> NSEvent {
-                NSEvent.mouseEvent(with: drag ? .leftMouseDragged : .leftMouseDown, location: nav.map.convert(p, to: nil), modifierFlags: [], timestamp: 0,
+                NSEvent.mouseEvent(with: drag ? .leftMouseDragged : .leftMouseDown, location: zo.map.convert(p, to: nil), modifierFlags: [], timestamp: 0,
                                    windowNumber: wc.window?.windowNumber ?? 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
             }
-            nav.map.mouseDown(with: click(nav.map.mapRect(CGRect(x: 1500, y: 1000, width: 0, height: 0)).origin))
+            zo.map.mouseDown(with: click(zo.map.mapRect(CGRect(x: 1500, y: 1000, width: 0, height: 0)).origin))
             let jumped = near(visible().midX, 1500, 4) && near(visible().midY, 1000, 4)
-            nav.map.mouseDragged(with: click(nav.map.mapRect(CGRect(x: 900, y: 700, width: 0, height: 0)).origin, drag: true))
+            zo.map.mouseDragged(with: click(zo.map.mapRect(CGRect(x: 900, y: 700, width: 0, height: 0)).origin, drag: true))
             let dragged = near(visible().midX, 900, 4) && near(visible().midY, 700, 4)
             wc.scroll.magnification = 1
             return jumped && dragged
         }))
-        steps.append(("navigator: it draws the diagram, and View hides or shows it in every window", {
-            let nav = wc.inspector.navigator
-            nav.refresh()
-            guard let rep = nav.map.bitmapImageRepForCachingDisplay(in: nav.map.bounds) else { return false }
-            nav.map.cacheDisplay(in: nav.map.bounds, to: rep)
-            let a = nav.map.mapRect(wc.canvas.drawing.shapes[0].frame)
-            let sample = rep.colorAt(x: Int(a.midX * CGFloat(rep.pixelsWide) / nav.map.bounds.width), y: Int(a.midY * CGFloat(rep.pixelsHigh) / nav.map.bounds.height))
-            let drawn = sample.map { $0.alphaComponent > 0.5 } ?? false
+        steps.append(("navigator: View hides or shows it in every window", {
             let menu = NSMenuItem(title: "", action: #selector(DocumentWindowController.toggleNavigator(_:)), keyEquivalent: "")
             _ = wc.validateMenuItem(menu)
             let hideTitle = menu.title == "Hide Navigator"
             wc.toggleNavigator(nil)
-            pump(0.2)
-            let hidden = !wc.inspector.navigatorShown
+            let hidden = wc.zoomOverlay.isHidden
             _ = wc.validateMenuItem(menu)
             let showTitle = menu.title == "Show Navigator"
             wc.toggleNavigator(nil)
-            pump(0.2)
-            let shown = wc.inspector.navigatorShown
-            NavigatorView.isVisible = wasVisible
+            let shown = !wc.zoomOverlay.isHidden
+            NavigatorPrefs.isVisible = wasVisible
             wc.window?.orderOut(nil)
-            return drawn && hideTitle && hidden && showTitle && shown
+            return hideTitle && hidden && showTitle && shown
         }))
         return steps
     }

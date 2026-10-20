@@ -196,7 +196,7 @@ final class AngleRow: NSObject {
     }
 }
 
-final class InspectorView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate {
+final class InspectorView: NSView, NSTextFieldDelegate {
     weak var canvas: CanvasView?
 
     /// The saved styles shown in the Styles section (the app-wide library unless a test supplies its own).
@@ -226,15 +226,12 @@ final class InspectorView: NSView, NSTableViewDataSource, NSTableViewDelegate, N
 
     private let scroll = NSScrollView()
     private let container = FlippedView()
-    private var layersPane: NSView!
     private let header = NSTextField(labelWithString: "")
 
     // Sections (all live in one scrolling column)
     private var stylesSection: DisclosureSection!
     private var fillSection: DisclosureSection!
     /// The Navigator, above everything else in the sidebar.
-    let navigator = NavigatorView()
-    private var navigatorSection: DisclosureSection!
     private var lineSection: DisclosureSection!
     private var shadowSection: DisclosureSection!
     private var objectSection: DisclosureSection!
@@ -295,8 +292,6 @@ final class InspectorView: NSView, NSTableViewDataSource, NSTableViewDelegate, N
     private let headSize = SliderRow("Head size", 0.5, 3, decimals: 1, suffix: "×")
 
     // Layers
-    private let layerTable = NSTableView()
-    private var layersCache: [Layer] = []
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -459,20 +454,13 @@ final class InspectorView: NSView, NSTableViewDataSource, NSTableViewDelegate, N
         connectorSection = DisclosureSection("Connector", [row("Type", routePopup), row("Start", startHead),
                                                            row("End", endHead), headSize.row, note])
 
-        navigatorSection = DisclosureSection("Navigator", [navigator])
-        navigatorSection.isHidden = !NavigatorView.isVisible
-        NotificationCenter.default.addObserver(forName: .navigatorVisibilityChanged, object: nil, queue: nil) { [weak self] _ in
-            self?.navigatorSection.isHidden = !NavigatorView.isVisible
-        }
-        let column = NSStackView(views: [navigatorSection, header, stylesSection, fillSection, lineSection, shadowSection, objectSection,
+        let column = NSStackView(views: [header, stylesSection, fillSection, lineSection, shadowSection, objectSection,
                                          textSection, connectorSection])
         column.orientation = .vertical
         column.alignment = .leading
         column.spacing = 12
         column.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 18, right: 14)
         column.translatesAutoresizingMaskIntoConstraints = false
-
-        layersPane = buildLayersPane()
 
         container.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(column)
@@ -481,13 +469,7 @@ final class InspectorView: NSView, NSTableViewDataSource, NSTableViewDelegate, N
         scroll.drawsBackground = false
         scroll.translatesAutoresizingMaskIntoConstraints = false
 
-        let divider = NSBox()
-        divider.boxType = .separator
-        divider.translatesAutoresizingMaskIntoConstraints = false
-
         addSubview(scroll)
-        addSubview(divider)
-        addSubview(layersPane)
         NSLayoutConstraint.activate([
             column.topAnchor.constraint(equalTo: container.topAnchor),
             column.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -497,21 +479,11 @@ final class InspectorView: NSView, NSTableViewDataSource, NSTableViewDelegate, N
             scroll.topAnchor.constraint(equalTo: topAnchor),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: divider.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
             container.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
 
-            divider.leadingAnchor.constraint(equalTo: leadingAnchor),
-            divider.trailingAnchor.constraint(equalTo: trailingAnchor),
-            divider.bottomAnchor.constraint(equalTo: layersPane.topAnchor),
-            // The layers panel is always on screen, below whatever sections the selection needs.
-            layersPane.leadingAnchor.constraint(equalTo: leadingAnchor),
-            layersPane.trailingAnchor.constraint(equalTo: trailingAnchor),
-            layersPane.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
     }
-
-    /// True while the Navigator section is on screen.
-    var navigatorShown: Bool { !navigatorSection.isHidden }
 
     /// Titles of the sections currently on screen (used by the self-test).
     var visibleSectionTitles: [String] {
@@ -533,8 +505,6 @@ final class InspectorView: NSView, NSTableViewDataSource, NSTableViewDelegate, N
     var opacityControl: SliderRow { opacity }
     var fillOpacityControl: SliderRow { fillOpacity }
 
-    var isLayersPanelHidden: Bool { layersPane.isHidden || layersPane.superview == nil }
-    var layerRowCount: Int { layerTable.numberOfRows }
 
     /// Height the scrolling column wants (used by the layout self-check).
     var currentPaneHeight: CGFloat { container.fittingSize.height }
@@ -845,132 +815,7 @@ final class InspectorView: NSView, NSTableViewDataSource, NSTableViewDelegate, N
         if everythingLocked { header.stringValue += " (locked)" }
         rotation.setEnabled(!(shapes.allSatisfy(\.locked) && !shapes.isEmpty))
 
-        refreshLayers()
     }
 
     // MARK: Layers pane
-
-    private func buildLayersPane() -> NSView {
-        func column(_ id: String, _ title: String, _ width: CGFloat) -> NSTableColumn {
-            let c = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id))
-            c.title = title
-            c.width = width
-            if id != "name" { c.minWidth = width; c.maxWidth = width }
-            return c
-        }
-        layerTable.addTableColumn(column("vis", "Show", 40))
-        layerTable.addTableColumn(column("lock", "Lock", 40))
-        layerTable.addTableColumn(column("name", "Layer", 120))
-        layerTable.dataSource = self
-        layerTable.delegate = self
-        layerTable.rowHeight = 24
-        layerTable.usesAlternatingRowBackgroundColors = true
-        layerTable.allowsEmptySelection = false
-
-        let tableScroll = NSScrollView()
-        tableScroll.documentView = layerTable
-        tableScroll.hasVerticalScroller = true
-        tableScroll.borderType = .bezelBorder
-        tableScroll.translatesAutoresizingMaskIntoConstraints = false
-        tableScroll.heightAnchor.constraint(equalToConstant: 150).isActive = true
-        tableScroll.widthAnchor.constraint(equalToConstant: 232).isActive = true
-
-        func button(_ title: String, tip: String, _ handler: @escaping () -> Void) -> NSButton {
-            let b = NSButton(title: title, target: nil, action: nil)
-            b.bezelStyle = .texturedRounded
-            b.controlSize = .small
-            b.toolTip = tip
-            bind(b) { _ in handler() }
-            return b
-        }
-        let buttons = NSStackView(views: [
-            button("+", tip: "New layer above the active one") { [unowned self] in canvas?.addLayer() },
-            button("−", tip: "Delete the active layer and its objects") { [unowned self] in
-                if let id = canvas?.activeLayerID { canvas?.deleteLayer(id) }
-            },
-            button("▲", tip: "Bring layer forward") { [unowned self] in
-                if let id = canvas?.activeLayerID { canvas?.moveLayer(id, up: true) }
-            },
-            button("▼", tip: "Send layer backward") { [unowned self] in
-                if let id = canvas?.activeLayerID { canvas?.moveLayer(id, up: false) }
-            },
-        ])
-        buttons.spacing = 6
-
-        let moveBtn = button("Move Selection to This Layer", tip: "Move selected objects onto the active layer") { [unowned self] in
-            if let id = canvas?.activeLayerID { canvas?.moveSelection(toLayer: id) }
-        }
-
-        let box = NSStackView(views: [sectionTitle("Layers (top = front)"), tableScroll, buttons, moveBtn])
-        box.orientation = .vertical
-        box.alignment = .leading
-        box.spacing = 9
-        box.edgeInsets = NSEdgeInsets(top: 10, left: 14, bottom: 14, right: 14)
-        box.translatesAutoresizingMaskIntoConstraints = false
-        box.toolTip = "New objects are created on the highlighted layer. Hidden or locked layers can't be selected."
-        return box
-    }
-
-    private func layer(atRow row: Int) -> Layer? {
-        guard let layers = canvas?.drawing.layers, row >= 0, row < layers.count else { return nil }
-        return layers[layers.count - 1 - row]   // top layer first
-    }
-
-    func refreshLayers(force: Bool = false) {
-        guard let canvas else { return }
-        let layers = canvas.drawing.layers
-        updating = true
-        defer { updating = false }
-        if force || layers != layersCache {
-            layersCache = layers
-            layerTable.reloadData()
-        }
-        if let active = layers.firstIndex(where: { $0.id == canvas.activeLayerID }) {
-            let row = layers.count - 1 - active
-            if layerTable.selectedRow != row { layerTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false) }
-        }
-    }
-
-    func numberOfRows(in tableView: NSTableView) -> Int { canvas?.drawing.layers.count ?? 0 }
-
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        guard let l = layer(atRow: row), let id = tableColumn?.identifier.rawValue else { return nil }
-        switch id {
-        case "vis", "lock":
-            let b = NSButton(checkboxWithTitle: "", target: self, action: #selector(layerFlagToggled(_:)))
-            b.identifier = NSUserInterfaceItemIdentifier(id)
-            b.state = (id == "vis" ? l.visible : l.locked) ? .on : .off
-            return b
-        default:
-            let f = NSTextField(string: l.name)
-            f.isBordered = false
-            f.drawsBackground = false
-            f.isEditable = true
-            f.font = .systemFont(ofSize: 12)
-            f.delegate = self
-            return f
-        }
-    }
-
-    @objc private func layerFlagToggled(_ sender: NSButton) {
-        let row = layerTable.row(for: sender)
-        guard let l = layer(atRow: row) else { return }
-        if sender.identifier?.rawValue == "vis" {
-            canvas?.setLayer(l.id, visible: sender.state == .on)
-        } else {
-            canvas?.setLayer(l.id, locked: sender.state == .on)
-        }
-    }
-
-    func controlTextDidEndEditing(_ obj: Notification) {
-        guard let field = obj.object as? NSTextField else { return }
-        let row = layerTable.row(for: field)
-        if let l = layer(atRow: row) { canvas?.renameLayer(l.id, to: field.stringValue) }
-        layerTable.reloadData()
-    }
-
-    func tableViewSelectionDidChange(_ notification: Notification) {
-        guard !updating, let l = layer(atRow: layerTable.selectedRow) else { return }
-        canvas?.setActiveLayer(l.id)
-    }
 }
