@@ -9,6 +9,7 @@ extension AppDelegate {
         func prepare() {
             guard !ready else { return }
             ready = true
+            wc.setLibrary(false, persist: false)                                           // the saved Shape Library preference must not matter
             wc.window?.setContentSize(NSSize(width: 1000, height: 700))
             wc.window?.orderFront(nil)
             wc.window?.layoutIfNeeded()

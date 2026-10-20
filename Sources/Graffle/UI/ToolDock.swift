@@ -15,6 +15,8 @@ final class ToolDock: NSView {
         [Item(tool: .shape(.text), symbol: "textformat", name: "Text", key: "T"),
          Item(tool: .connector, symbol: "arrow.up.right", name: "Connector", key: "C"),
          Item(tool: .pen, symbol: "pencil.tip", name: "Pen", key: "P")],
+        [Item(tool: .line, symbol: "line.diagonal", name: "Line (angle and point snapping, live length)", key: "L"),
+         Item(tool: .wall, symbol: "building.2", name: "Wall (as thick as the drawing scale says)", key: "W")],
     ]
 
     private(set) var buttons: [(Tool, IconButton)] = []
@@ -29,7 +31,7 @@ final class ToolDock: NSView {
         addSubview(surface)
         let row = NSStackView()
         row.orientation = .horizontal
-        row.spacing = 4
+        row.spacing = 2          // thirteen 40 pt tools must still fit beside the minimap in a default window
         row.edgeInsets = NSEdgeInsets(top: 6, left: 6, bottom: 6, right: 6)
         row.translatesAutoresizingMaskIntoConstraints = false
         for (gi, group) in Self.groups.enumerated() {

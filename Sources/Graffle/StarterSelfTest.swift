@@ -16,7 +16,7 @@ extension AppDelegate {
                 canvas.load(d)
                 if canvas.pngData()?.isEmpty != false || canvas.svgData()?.isEmpty != false { return false }
             }
-            return Starter.allCases.count == 7
+            return Starter.allCases.count == 9
         }))
         steps.append(("starters: each has its distinctive parts (braces, crow's feet, fishbone ribs, pyramid levels, tree leaves, UML boxes)", {
             func d(_ s: Starter) -> Drawing { Starters.drawing(s) }
@@ -29,6 +29,28 @@ extension AppDelegate {
             let uml = d(.uml).connectors.count == 5 && d(.uml).shapes.contains { $0.text == "«interface»" } && d(.uml).connectors.contains { $0.endHead == .hollowTriangle }
             let concept = d(.conceptual).shapes.filter { $0.kind == .ellipse }.count == 10 && d(.conceptual).connectors.contains { !$0.text.isEmpty }
             return er && braces && fish && pyr && tree && uml && concept
+        }))
+        steps.append(("circuit: every symbol builds with pins, wires attach at the pins (also when rotated), and the starter has its parts", {
+            for part in CircuitPart.allCases {
+                let s = part.makeShape(layer: UUID(), at: .zero, number: 1)
+                if part != .junction, (s.pins ?? []).isEmpty || s.outline?.isEmpty != false { return false }
+            }
+            let layer = UUID()
+            let a = CircuitPart.resistor.makeShape(layer: layer, at: CGPoint(x: 100, y: 100), number: 1)
+            let b = CircuitPart.ground.makeShape(layer: layer, at: CGPoint(x: 300, y: 300), number: 1)
+            var rotated = CircuitPart.battery.makeShape(layer: layer, at: CGPoint(x: 100, y: 400), number: 1, rotation: 90)
+            let c = Connector(layer: layer, from: a.id, to: b.id, route: .orthogonal)
+            guard let g = ConnectorGeometry.make(c, a, b) as ConnectorGeometry? else { return false }
+            let ends = abs(g.startPoint.x - a.frame.maxX) < 0.5 && abs(g.startPoint.y - a.frame.midY) < 0.5
+                && abs(g.endPoint.x - b.frame.midX) < 0.5 && abs(g.endPoint.y - b.frame.minY) < 0.5
+            // A battery turned a quarter turn has its leads at the top and bottom of its frame's center.
+            let top = rotated.pinFacing(CGPoint(x: rotated.center.x, y: -1000))
+            rotated.rotation = 0
+            let d = Starters.drawing(.circuit)
+            let ok = d.shapes.filter { $0.pins != nil }.count == 13 && d.connectors.count == 12
+                && d.shapes.contains { $0.name == "Transistor" || $0.name == "NPN Transistor" }
+            guard let t = top else { return false }
+            return ends && abs(t.point.x - rotated.center.x) < 0.5 && abs(t.point.y - (rotated.center.y - 40)) < 0.5 && ok
         }))
         steps.append(("starters: crow's-foot ends draw on the canvas and in SVG, and appear in the connector menus", {
             let kinds: [HeadKind] = [.crowFoot, .crowFootBar, .crowFootCircle, .doubleBar, .circleBar]

@@ -3,7 +3,7 @@ import CoreGraphics
 
 /// Kinds of diagram that start from ready-made content to edit (as opposed to Blank, or the ones read from code).
 enum Starter: String, CaseIterable {
-    case uml, entityRelationship, conceptual, synoptic, pyramid, ishikawa, tree
+    case uml, entityRelationship, conceptual, synoptic, pyramid, ishikawa, tree, circuit, floorPlan
 
     var title: String {
         switch self {
@@ -14,6 +14,8 @@ enum Starter: String, CaseIterable {
         case .pyramid: return "Pyramid Diagram"
         case .ishikawa: return "Ishikawa Diagram"
         case .tree: return "Tree Diagram"
+        case .circuit: return "Circuit Diagram"
+        case .floorPlan: return "Floor Plan"
         }
     }
 
@@ -26,6 +28,8 @@ enum Starter: String, CaseIterable {
         case .pyramid: return "Stacked levels, from the top of the pyramid to its base, each with a label (diagrama piramidal)."
         case .ishikawa: return "Cause-and-effect fishbone: six categories of causes pointing at the problem (diagrama de causa y efecto)."
         case .tree: return "A decision tree: a root, chance nodes and outcomes with labelled branches (diagrama de árbol)."
+        case .floorPlan: return "Architectural plan at real scale (1 point = 1 cm): walls, doors, windows, furniture and dimension lines (plano arquitectónico)."
+        case .circuit: return "Electronic schematic with resistors, LEDs, transistors, gates and more, joined by wires (diagrama de circuito; drawing only, no simulation)."
         }
     }
 }
@@ -40,6 +44,8 @@ enum Starters {
         case .pyramid: return pyramid()
         case .ishikawa: return ishikawa()
         case .tree: return tree()
+        case .circuit: return circuit()
+        case .floorPlan: return floorPlan()
         }
     }
 
@@ -296,6 +302,117 @@ enum Starters {
             }
         }
         return b.drawing
+    }
+
+    // MARK: Circuit
+
+    /// A battery driving an LED through a switch and a resistor, plus a transistor that switches a second LED.
+    private static func circuit() -> Drawing {
+        var d = Drawing()
+        let layer = d.layers[0].id
+        var counts: [CircuitPart: Int] = [:]
+        func put(_ part: CircuitPart, center: CGPoint, rotation: Double = 0) -> UUID {
+            counts[part, default: 0] += 1
+            let s = part.makeShape(layer: layer, at: CGPoint(x: center.x - part.size.width / 2, y: center.y - part.size.height / 2),
+                                   number: counts[part]!, rotation: rotation)
+            d.shapes.append(s)
+            return s.id
+        }
+        func wire(_ a: UUID, _ b: UUID) { d.connectors.append(CircuitPart.wire(layer: layer, from: a, to: b)) }
+        func note(_ text: String, _ frame: CGRect, size: Double = 13, bold: Bool = false) {
+            var st = Style.textBox
+            st.text.size = size; st.text.bold = bold; st.text.color = ink
+            d.shapes.append(Shape(layer: layer, kind: .text, frame: frame, style: st, text: text))
+        }
+        note("LED with series resistor", CGRect(x: 80, y: 60, width: 420, height: 30), size: 20, bold: true)
+        let battery = put(.battery, center: CGPoint(x: 140, y: 340), rotation: 90)
+        let sw = put(.switchSPST, center: CGPoint(x: 300, y: 220))
+        let resistor = put(.resistor, center: CGPoint(x: 500, y: 220))
+        let led = put(.led, center: CGPoint(x: 700, y: 340), rotation: 90)
+        let gnd = put(.ground, center: CGPoint(x: 420, y: 520))
+        wire(battery, sw); wire(sw, resistor); wire(resistor, led); wire(led, gnd); wire(battery, gnd)
+        note("9 V", CGRect(x: 60, y: 330, width: 50, height: 24))
+        note("330 Ω", CGRect(x: 460, y: 156, width: 80, height: 24))
+
+        note("Transistor switch", CGRect(x: 880, y: 60, width: 420, height: 30), size: 20, bold: true)
+        let vcc = put(.dcSource, center: CGPoint(x: 1200, y: 300), rotation: 270)
+        let load = put(.resistor, center: CGPoint(x: 1200, y: 430), rotation: 90)
+        let lamp = put(.led, center: CGPoint(x: 1200, y: 550), rotation: 90)
+        let q = put(.npn, center: CGPoint(x: 1200, y: 690))
+        let rb = put(.resistor, center: CGPoint(x: 1020, y: 690))
+        let input = put(.dcSource, center: CGPoint(x: 840, y: 800), rotation: 90)
+        let gnd2 = put(.ground, center: CGPoint(x: 1200, y: 820))
+        let gnd3 = put(.ground, center: CGPoint(x: 840, y: 920))
+        wire(vcc, load); wire(load, lamp); wire(lamp, q); wire(q, gnd2); wire(rb, q); wire(input, rb); wire(input, gnd3)
+        return d
+    }
+
+    // MARK: Floor plan
+
+    /// A two-room flat at 1 point = 1 cm: 15 cm walls, doors, windows, furniture and dimension lines.
+    private static func floorPlan() -> Drawing {
+        var d = Drawing()
+        d.scale = .standard
+        let layer = d.layers[0].id
+        let wallStyle: Style = {
+            var st = Style()
+            st.fill.kind = .none
+            st.stroke.color = RGBA(0.12, 0.13, 0.16)
+            st.stroke.width = DrawingScale.standard.wallThicknessPoints
+            st.stroke.cap = .square; st.stroke.join = .miter
+            return st
+        }()
+        func wall(_ a: CGPoint, _ b: CGPoint) -> UUID {
+            let s = Drafting.lineShape(from: a, to: b, layer: layer, style: wallStyle, name: "Wall")
+            d.shapes.append(s)
+            return s.id
+        }
+        /// Puts a library part so the middle of its top band (where a wall runs) sits on `at`, turned `degrees` clockwise about that point.
+        func place(_ id: String, at: CGPoint, degrees: Double = 0, band: Bool = true) {
+            guard let item = ArchitectureCatalog.items.first(where: { $0.id == "arch-" + id }) else { return }
+            var shapes = item.drawing(layer: layer, style: Style()).shapes
+            let anchor = band ? CGPoint(x: item.size.width / 2, y: 7.5) : CGPoint(x: item.size.width / 2, y: item.size.height / 2)
+            Drafting.rotate(&shapes, by: degrees, about: anchor)
+            for i in shapes.indices { shapes[i].frame.origin.x += at.x - anchor.x; shapes[i].frame.origin.y += at.y - anchor.y }
+            d.shapes += shapes
+        }
+        func note(_ text: String, _ frame: CGRect, size: Double = 13, bold: Bool = false) {
+            var st = Style.textBox
+            st.text.size = size; st.text.bold = bold; st.text.color = ink
+            d.shapes.append(Shape(layer: layer, kind: .text, frame: frame, style: st, text: text))
+        }
+        func dimension(_ a: UUID, _ b: UUID, _ axis: DimensionAxis, offset: Double) {
+            var st = Style.connector
+            st.stroke.color = RGBA(0.10, 0.12, 0.30); st.stroke.width = 1; st.text.size = 11; st.text.color = RGBA(0.10, 0.12, 0.30)
+            d.connectors.append(Connector(layer: layer, from: a, to: b, route: .straight, startHead: .none, endHead: .none, style: st,
+                                          dimension: DimensionSpec(axis: axis, offset: offset)))
+        }
+
+        note("Floor plan  ·  1 point = 1 cm", CGRect(x: 200, y: 20, width: 420, height: 30), size: 20, bold: true)
+        let (x0, x1, x2, y0, y1) = (CGFloat(200), CGFloat(700), CGFloat(1000), CGFloat(200), CGFloat(600))
+        let top = wall(CGPoint(x: x0, y: y0), CGPoint(x: x2, y: y0))
+        let right = wall(CGPoint(x: x2, y: y0), CGPoint(x: x2, y: y1))
+        _ = wall(CGPoint(x: x2, y: y1), CGPoint(x: x0, y: y1))
+        let left = wall(CGPoint(x: x0, y: y1), CGPoint(x: x0, y: y0))
+        let partition = wall(CGPoint(x: x1, y: y0), CGPoint(x: x1, y: y1))
+
+        place("door-single", at: CGPoint(x: 345, y: y1), degrees: 180)                     // front door, opening into the living room
+        place("door-single-left", at: CGPoint(x: x1, y: 330), degrees: 90)                 // between the rooms
+        place("window", at: CGPoint(x: 360, y: y0)); place("window", at: CGPoint(x: 860, y: y0))
+        place("window", at: CGPoint(x: x2, y: 400), degrees: 90)
+
+        place("sofa-3", at: CGPoint(x: 340, y: 247), band: false)
+        place("table-rect", at: CGPoint(x: 340, y: 360), band: false)
+        place("table-round", at: CGPoint(x: 560, y: 470), band: false)
+        place("bed-double", at: CGPoint(x: 800, y: 320), band: false)
+        place("wardrobe", at: CGPoint(x: 900, y: 555), band: false)
+        place("armchair", at: CGPoint(x: 590, y: 260), band: false)
+
+        dimension(top, top, .horizontal, offset: 110)
+        dimension(left, left, .vertical, offset: 60)
+        dimension(left, partition, .horizontal, offset: 55)
+        dimension(partition, right, .horizontal, offset: 55)
+        return d
     }
 
     // MARK: UML

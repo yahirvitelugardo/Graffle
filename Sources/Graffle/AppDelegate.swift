@@ -13,7 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var snapshotter: SVGSnapshotter?
 
     private static let developerFlags: Set<String> = [
-        "--render-sample", "--render-about", "--import-to-png", "--architecture-to-png", "--render-chooser", "--render-navigator", "--classes-to-png", "--classes-to-code", "--render-dbwizard", "--starter-to-png", "--svg-to-png", "--selftest", "--debug-window",
+        "--render-sample", "--render-about", "--import-to-png", "--architecture-to-png", "--render-chooser", "--render-navigator", "--classes-to-png", "--classes-to-code", "--render-dbwizard", "--starter-to-png", "--circuit-parts-to-png", "--svg-to-png", "--selftest", "--debug-window",
     ]
     private var isDeveloperRun: Bool { !AppDelegate.developerFlags.isDisjoint(with: CommandLine.arguments) }
 
@@ -50,6 +50,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 if let png = canvas.pngData() { try? png.write(to: URL(fileURLWithPath: a[i + 2])) }
                 print("starter:", starter.rawValue, d.shapes.count, "shapes,", d.connectors.count, "connectors")
             }
+            exit(0)
+        }
+        if let i = CommandLine.arguments.firstIndex(of: "--circuit-parts-to-png"), i + 1 < CommandLine.arguments.count {
+            // Dev helper: every circuit symbol in a grid, as PNG.
+            var d = Drawing()
+            for (n, part) in CircuitPart.allCases.enumerated() {
+                let origin = CGPoint(x: 60 + CGFloat(n % 5) * 180, y: 60 + CGFloat(n / 5) * 130)
+                d.shapes.append(part.makeShape(layer: d.layers[0].id, at: origin, number: 1))
+            }
+            canvas.frame = CGRect(origin: .zero, size: CanvasView.canvasSize)
+            canvas.load(d)
+            if let png = canvas.pngData() { try? png.write(to: URL(fileURLWithPath: CommandLine.arguments[i + 1])) }
             exit(0)
         }
         if let i = CommandLine.arguments.firstIndex(of: "--render-dbwizard"), i + 2 < CommandLine.arguments.count {
@@ -105,6 +117,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             let wc = DocumentWindowController()
             wc.window?.setContentSize(NSSize(width: 1320, height: 840))
             wc.showWindow(nil)
+            if CommandLine.arguments.contains("--library") {
+                wc.toggleLibrary(nil)
+                UserDefaults.standard.removeObject(forKey: "ui.libraryVisible")          // a snapshot must not change what the real app opens with
+                if let q = CommandLine.arguments.first(where: { $0.hasPrefix("--query=") }) { wc.library.setQuery(String(q.dropFirst(8))) }
+            }
             var d = ThemePreview.architectureSample()
             ThemeLibrary.theme(id: "soft-ui")?.apply(to: &d)
             wc.canvas.load(d)
@@ -416,7 +433,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item("Same Width", #selector(CanvasView.matchSize(_:)), tag: 0),
             item("Same Height", #selector(CanvasView.matchSize(_:)), tag: 1),
             item("Same Size", #selector(CanvasView.matchSize(_:)), tag: 2),
+            sep(),
+            item("Rotate Clockwise", #selector(CanvasView.rotateQuarter(_:)), "r", [.command, .option], tag: 0),
+            item("Rotate Counterclockwise", #selector(CanvasView.rotateQuarter(_:)), "r", [.command, .option, .shift], tag: 1),
         ]))
+
+        main.addItem(submenu("Drafting", [
+            item("Line Tool", #selector(DocumentWindowController.chooseLineTool(_:)), tag: 0),
+            item("Wall Tool", #selector(DocumentWindowController.chooseLineTool(_:)), tag: 1),
+            sep(),
+            item("Ortho Mode", #selector(DocumentWindowController.toggleOrtho(_:)), "o", [.command, .option]),
+            item("Object Snap", #selector(DocumentWindowController.toggleObjectSnap(_:)), "e", [.command, .control]),
+            sep(),
+            item("Drawing Scale…", #selector(DocumentWindowController.showDrawingScale(_:))),
+            sep(),
+            item("Horizontal Dimension", #selector(DocumentWindowController.addDimension(_:)), "1", [.command, .option], tag: 0),
+            item("Vertical Dimension", #selector(DocumentWindowController.addDimension(_:)), "2", [.command, .option], tag: 1),
+            item("Aligned Dimension", #selector(DocumentWindowController.addDimension(_:)), "3", [.command, .option], tag: 2),
+            item("Edit Dimension or Line…", #selector(DocumentWindowController.editMeasurement(_:)), "m", [.command, .option]),
+        ]))
+
+        // Circuit symbols, grouped like the parts bin of a circuit editor; each item draws a small picture of its symbol.
+        main.addItem(submenu("Circuit", CircuitPart.Category.allCases.map { category in
+            submenu(category.rawValue, CircuitPart.allCases.filter { $0.category == category }.map { part in
+                let it = item(part.title, #selector(DocumentWindowController.insertCircuitPart(_:)))
+                it.representedObject = part.rawValue
+                it.image = part.icon()
+                return it
+            })
+        }))
 
         let appearanceMenu = submenu("Appearance", UIAppearance.allCases.map { mode in
             let it = item(mode.title, #selector(AppDelegate.setAppearance(_:)))
@@ -430,6 +475,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item("Zoom to Fit", #selector(DocumentWindowController.zoomToFit(_:)), "0", [.command, .option]),
             item("Zoom to Selection", #selector(DocumentWindowController.zoomToSelection(_:)), "0", [.command, .control]),
             item("Hide Navigator", #selector(DocumentWindowController.toggleNavigator(_:)), "j", [.command, .option]),
+            item("Show Shape Library", #selector(DocumentWindowController.toggleLibrary(_:)), "l", [.command, .control]),
             sep(),
             item("Show Rulers", #selector(DocumentWindowController.toggleRulers(_:)), "r"),
             item("Smart Guides", #selector(DocumentWindowController.toggleSmartGuides(_:))),
@@ -2701,6 +2747,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         steps.append(contentsOf: self.databaseSteps(tempDir: tempDir))
         steps.append(contentsOf: self.codeGenSteps(tempDir: tempDir))
         steps.append(contentsOf: self.starterSteps(bundled: bundled))
+        steps.append(contentsOf: self.librarySteps(bundled: bundled))
+        steps.append(contentsOf: self.draftingSteps(bundled: bundled))
         steps.append(contentsOf: self.themeSteps(cv: cv, drag: drag, bundled: bundled, tempDir: tempDir))
         var twoDocs: (a: GraffleDocument, b: GraffleDocument)?
         steps.append(("documents: New opens independent windows, each with its own canvas and inspector", {

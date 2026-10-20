@@ -5,6 +5,10 @@ enum Tool: Equatable {
     case shape(ShapeKind)
     case connector
     case pen
+    /// Precise straight lines (Drafting): click-drag, with angle and point snapping and a live length.
+    case line
+    /// Like `.line`, but as thick as a wall at the drawing's scale.
+    case wall
     /// Click to zoom in (Option-click to zoom out); drag a box to zoom to it.
     case zoom
     /// Drag to scroll the document.
@@ -84,6 +88,7 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
         case create(id: UUID, start: CGPoint, before: Drawing)
         case rubber(start: CGPoint, base: Set<UUID>)
         case connect(from: UUID)
+        case line(start: CGPoint, wall: Bool)
         case zoom(start: CGPoint, out: Bool)
         case pan(startWindow: CGPoint, origin: CGPoint)
     }
@@ -94,6 +99,17 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
     private var rubberRect: CGRect?
     private var connectPoint: CGPoint?
     private var connectTarget: UUID?
+    // Drafting: the end of the line being drawn, and the snap point the pointer is on.
+    private var lineEnd: CGPoint?
+    private var snapMarker: Drafting.SnapPoint?
+    /// Lines are drawn along 0 and 90 degrees only (Shift gives 15-degree steps whether this is on or not).
+    var orthoMode: Bool = UserDefaults.standard.bool(forKey: "orthoMode") {
+        didSet { UserDefaults.standard.set(orthoMode, forKey: "orthoMode") }
+    }
+    /// Lines snap to the ends, middles, corners and centers of existing objects.
+    var objectSnap: Bool = UserDefaults.standard.object(forKey: "objectSnap") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(objectSnap, forKey: "objectSnap") }
+    }
     private var pasteCount = 0
 
     // Pen tool: the path being drawn. Point editing: the path of the selected shape, in canvas coordinates.
@@ -137,6 +153,10 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        registerForDraggedTypes([NSPasteboard.PasteboardType("mx.graffle.library-item")])
+    }
 
     private var zoom: CGFloat { enclosingScrollView?.magnification ?? 1 }
 
@@ -322,7 +342,7 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
 
     private func geometry(_ c: Connector) -> ConnectorGeometry? {
         guard let a = shape(c.from), let b = shape(c.to) else { return nil }
-        return ConnectorGeometry.make(c, a, b)
+        return ConnectorGeometry.make(c, a, b, scale: drawing.scale)
     }
 
     // MARK: Style API (used by the inspector)
@@ -498,14 +518,15 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
         }
         ctx.restoreGState()
 
-        if !c.text.isEmpty, !(editor != nil && isEditing(connector: c.id)) {
-            drawConnectorLabel(c, at: g.labelPoint)
+        let label = c.text.isEmpty ? (g.measureText ?? "") : c.text
+        if !label.isEmpty, !(editor != nil && isEditing(connector: c.id)) {
+            drawConnectorLabel(c, label, at: g.labelPoint)
         }
     }
 
-    private func drawConnectorLabel(_ c: Connector, at p: CGPoint) {
+    private func drawConnectorLabel(_ c: Connector, _ text: String, at p: CGPoint) {
         let color = c.style.text.color?.ns ?? .black
-        let str = NSAttributedString(string: c.text, attributes: Render.attributes(c.style.text, color: color))
+        let str = NSAttributedString(string: text, attributes: Render.attributes(c.style.text, color: color))
         let sz = str.size()
         let rect = CGRect(x: p.x - sz.width / 2 - 4, y: p.y - sz.height / 2 - 1, width: sz.width + 8, height: sz.height + 2)
         (isExporting ? NSColor.white : Tok.canvasBG).setFill()
@@ -580,6 +601,31 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
             ctx.setStrokeColor(accent.cgColor)
             ctx.setLineWidth(1 / z)
             ctx.stroke(r)
+        }
+
+        if case .line(let start, let wall) = drag, let end = lineEnd {
+            let thick = wall ? CGFloat((drawing.scale ?? .standard).wallThicknessPoints) : 2 / z
+            ctx.setStrokeColor(accent.withAlphaComponent(wall ? 0.45 : 0.9).cgColor)
+            ctx.setLineWidth(max(thick, 1 / z))
+            ctx.setLineCap(wall ? .square : .round)
+            ctx.move(to: start); ctx.addLine(to: end)
+            ctx.strokePath()
+            let length = hypot(end.x - start.x, end.y - start.y)
+            let text = "\((drawing.scale ?? .standard).format(points: Double(length)))   \(String(format: "%.1f", Drafting.angle(from: start, to: end)))°"
+            drawDraftLabel(text, near: end, in: ctx)
+        }
+        if let m = snapMarker, isDrafting {
+            let r = 7 / z
+            ctx.setStrokeColor(Tok.guideSnap.cgColor)
+            ctx.setLineWidth(1.6 / z)
+            let box = CGRect(x: m.point.x - r, y: m.point.y - r, width: r * 2, height: r * 2)
+            switch m.kind {
+            case .endpoint, .corner: ctx.stroke(box)
+            case .midpoint:
+                ctx.addLines(between: [CGPoint(x: m.point.x - r, y: m.point.y + r), CGPoint(x: m.point.x + r, y: m.point.y + r), CGPoint(x: m.point.x, y: m.point.y - r)]); ctx.closePath(); ctx.strokePath()
+            case .center: ctx.strokeEllipse(in: box)
+            }
+            drawDraftLabel(m.kind.rawValue, near: CGPoint(x: m.point.x + 14 / z, y: m.point.y + 14 / z), in: ctx, small: true)
         }
 
         if case .connect(let fromID) = drag, let from = shape(fromID), let p = connectPoint {
@@ -837,6 +883,11 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
             }
         case .pen:
             penMouseDown(p, event)
+        case .line, .wall:
+            let start = draftPoint(p, from: nil, flags: event.modifierFlags)
+            drag = .line(start: start, wall: tool == .wall)
+            lineEnd = start
+            needsDisplay = true
         case .zoom:
             drag = .zoom(start: p, out: event.modifierFlags.contains(.option))
         case .pan:
@@ -960,6 +1011,10 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
                 }
             }
             drawing = d
+
+        case .line(let start, _):
+            lineEnd = draftPoint(p, from: start, flags: event.modifierFlags)
+            needsDisplay = true
 
         case .pen:
             guard var pen = penPath, let i = pen.points.indices.last else { break }
@@ -1112,6 +1167,18 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
             tool = .select
             if isText { beginEditing(.shape(id)) }
 
+        case .line(let start, let wall):
+            let end = lineEnd ?? start
+            lineEnd = nil; snapMarker = nil
+            if hypot(end.x - start.x, end.y - start.y) >= 2 {
+                var st = wall ? wallStyle : lineStyle
+                if let theme = drawing.theme, !wall { theme.apply(to: &st, kind: .path) }
+                let line = Drafting.lineShape(from: start, to: end, layer: activeLayerID, style: st, name: wall ? "Wall" : "Line")
+                mutate(wall ? "Add Wall" : "Add Line") { $0.shapes.append(line) }
+                selection = [line.id]
+            }
+            needsDisplay = true
+
         case .connect(let from):
             if let to = connectTarget {
                 var c = Connector(layer: activeLayerID, from: from, to: to)
@@ -1196,6 +1263,8 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
             case "t": tool = .shape(.text)
             case "c": tool = .connector
             case "p": tool = .pen
+            case "l": tool = .line
+            case "w": tool = .wall
             case "z": tool = .zoom
             case "h": tool = .pan
             case "o": tool = .shape(.ellipse)
@@ -1479,7 +1548,7 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
     }
 
     override func resetCursorRects() {
-        if tool == .pen { addCursorRect(visibleRect, cursor: .crosshair) }
+        if tool == .pen || tool == .line || tool == .wall { addCursorRect(visibleRect, cursor: .crosshair) }
         if tool == .zoom { addCursorRect(visibleRect, cursor: Self.zoomCursor) }
         if tool == .pan { addCursorRect(visibleRect, cursor: .openHand) }
     }
@@ -1670,6 +1739,209 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
         if let top = placed.layers.last { setActiveLayer(top.id) }
         selection = Set(placed.shapes.map(\.id))
     }
+
+    /// Adds new objects (such as circuit symbols) as one undo step, in the theme's look, and selects them.
+    /// `near` is the center of the group; it snaps to the grid when snapping is on.
+    func addObjects(_ shapes: [Shape], named name: String, near center: CGPoint) {
+        guard !shapes.isEmpty else { return }
+        let box = shapes.map(\.frame).reduce(nil) { acc, f in acc.map { $0.union(f) } ?? f }!
+        let target = snap(center)
+        let dx = target.x - box.midX, dy = target.y - box.midY
+        let group: UUID? = shapes.count > 1 ? UUID() : nil
+        var added: [UUID] = []
+        mutate(name) { d in
+            let fallback = d.layers.contains { $0.id == activeLayerID } ? activeLayerID : d.layers[0].id
+            for var s in shapes {
+                s.layer = fallback
+                s.group = group
+                s.frame.origin.x += dx
+                s.frame.origin.y += dy
+                if let theme = d.theme { theme.apply(to: &s.style, kind: s.kind) }
+                d.shapes.append(s)
+                added.append(s.id)
+            }
+        }
+        selection = Set(added)
+    }
+
+    // MARK: Drafting
+
+    private var isDrafting: Bool { if case .line = drag { return true }; return false }
+
+    var lineStyle: Style {
+        var st = defaultStyle
+        st.fill.kind = .none
+        st.stroke.cap = .round
+        return st
+    }
+
+    /// Walls are as thick as `DrawingScale.wallThicknessPoints`, solid dark, with square ends so corners close.
+    var wallStyle: Style {
+        var st = Style()
+        st.fill.kind = .none
+        st.stroke.color = RGBA(0.12, 0.13, 0.16)
+        st.stroke.width = (drawing.scale ?? .standard).wallThicknessPoints
+        st.stroke.cap = .square
+        st.stroke.join = .miter
+        return st
+    }
+
+    /// Where a line point lands: constrained to an angle (Shift: 15-degree steps; Ortho: right angles), then snapped to
+    /// an object point (Option turns that off) or the grid. Sets `snapMarker` when it landed on an object.
+    private func draftPoint(_ p: CGPoint, from start: CGPoint?, flags: NSEvent.ModifierFlags) -> CGPoint {
+        snapMarker = nil
+        var q = p
+        var step: Double?
+        if let start {
+            if flags.contains(.shift) { step = 15 } else if orthoMode { step = 90 }
+            if let step {
+                q = Drafting.constrain(p, from: start, stepDegrees: step)
+                if snapToGrid {                                       // keep the angle, round the length to the grid
+                    let len = hypot(q.x - start.x, q.y - start.y), rounded = (len / gridSize).rounded() * gridSize
+                    if len > 0 { q = CGPoint(x: start.x + (q.x - start.x) * rounded / len, y: start.y + (q.y - start.y) * rounded / len) }
+                }
+            } else { q = snap(p) }
+        } else { q = snap(p) }
+        if objectSnap, !flags.contains(.option) {
+            let visible = Set(drawing.layers.filter { $0.visible && !$0.locked }.map(\.id))
+            let points = drawing.shapes.filter { visible.contains($0.layer) }.flatMap { Drafting.snapPoints(of: $0) }
+            if let hit = Drafting.nearest(p, in: points, radius: 10 / max(zoom, 0.01)) {
+                var accept = true
+                if let start, let step {                              // an angle is held: only points on that ray count
+                    let on = Drafting.constrain(hit.point, from: start, stepDegrees: step)
+                    accept = hypot(on.x - hit.point.x, on.y - hit.point.y) < 1.5
+                }
+                if accept { q = hit.point; snapMarker = hit }
+            }
+        }
+        return q
+    }
+
+    private func drawDraftLabel(_ text: String, near p: CGPoint, in ctx: CGContext, small: Bool = false) {
+        let z = max(zoom, 0.01)
+        let font = NSFont.monospacedDigitSystemFont(ofSize: (small ? 10 : 12) / z, weight: .medium)
+        let str = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: NSColor.white])
+        let size = str.size()
+        let rect = CGRect(x: p.x + 12 / z, y: p.y - size.height - 10 / z, width: size.width + 12 / z, height: size.height + 4 / z)
+        ctx.setFillColor(Tok.accent.cgColor)
+        ctx.addPath(CGPath(roundedRect: rect, cornerWidth: 5 / z, cornerHeight: 5 / z, transform: nil)); ctx.fillPath()
+        str.draw(at: CGPoint(x: rect.minX + 6 / z, y: rect.minY + 2 / z))
+    }
+
+    /// Drafting -> Drawing Scale: what a point stands for (one undo step).
+    func setScale(_ scale: DrawingScale?) { mutate("Drawing Scale") { $0.scale = scale } }
+
+    /// The two shapes a new dimension would measure: the selected shape twice, or the first two selected.
+    private var dimensionTargets: (UUID, UUID)? {
+        let ids = selectionOrder.filter { id in drawing.shapes.contains { $0.id == id } }
+        if ids.count == 1 { return (ids[0], ids[0]) }
+        if ids.count >= 2 { return (ids[0], ids[1]) }
+        return nil
+    }
+
+    var canAddDimension: Bool { dimensionTargets != nil }
+
+    /// Adds a dimension line measuring the selected shape (its width, height or length) or the gap between the first two selected.
+    func addDimension(_ axis: DimensionAxis) {
+        guard let (a, b) = dimensionTargets else { NSSound.beep(); return }
+        var st = Style.connector
+        st.stroke.color = RGBA(0.10, 0.12, 0.30)
+        st.stroke.width = 1
+        st.text.size = 11
+        st.text.color = RGBA(0.10, 0.12, 0.30)
+        if let theme = drawing.theme { theme.applyToConnector(&st) }
+        let c = Connector(layer: activeLayerID, from: a, to: b, route: .straight, startHead: .none, endHead: .none, style: st, text: "",
+                          dimension: DimensionSpec(axis: axis, offset: 36))
+        mutate("Add Dimension") { $0.connectors.append(c) }
+        selection = [c.id]
+    }
+
+    /// The selected dimension line, if exactly one connector is selected and it is one.
+    var selectedDimension: Connector? {
+        guard selection.count == 1, let c = selectedConnectors.first, c.dimension != nil else { return nil }
+        return c
+    }
+
+    func setSelectedDimension(axis: DimensionAxis, offset: Double, text: String) {
+        applyConnector("Edit Dimension") { c in
+            guard c.dimension != nil else { return }
+            c.dimension = DimensionSpec(axis: axis, offset: offset)
+            c.text = text
+        }
+    }
+
+    /// The length (canvas points) and angle (degrees) of the selected straight line, if one line is selected.
+    var selectedLineInfo: (length: Double, angle: Double)? {
+        guard selection.count == 1, let s = selectedShapes.first, let (a, b) = Drafting.straightEnds(of: s) else { return nil }
+        return (Double(hypot(b.x - a.x, b.y - a.y)), Drafting.angle(from: a, to: b))
+    }
+
+    /// Sets the length (canvas points) and angle of the selected straight line, keeping its start point.
+    func setSelectedLine(length: Double, angle: Double) {
+        guard selection.count == 1, let s = selectedShapes.first, !s.locked, let (a, _) = Drafting.straightEnds(of: s), length > 0 else { return }
+        let r = angle * .pi / 180
+        let b = CGPoint(x: a.x + CGFloat(cos(r) * length), y: a.y - CGFloat(sin(r) * length))
+        var line = Drafting.lineShape(from: a, to: b, layer: s.layer, style: s.style, name: s.name)
+        line.id = s.id; line.group = s.group; line.locked = s.locked
+        mutate("Edit Line") { d in if let i = d.shapes.firstIndex(where: { $0.id == s.id }) { d.shapes[i] = line } }
+    }
+
+    /// The selected objects (and the connectors between them) as a drawing, for saving them in the shape library.
+    func selectionDrawing() -> Drawing? {
+        guard !selectedShapes.isEmpty else { return nil }
+        return selectionSubset()
+    }
+
+    /// Puts a drawing (a library shape) on the canvas as one undo step, centered on `center`, on the active layer.
+    /// Objects get new ids; several shapes stay together as a group. `themed` restyles them in the theme's look.
+    func placeDrawing(_ sub: Drawing, named name: String, near center: CGPoint, themed: Bool) {
+        guard !sub.shapes.isEmpty else { return }
+        let box = sub.shapes.map(\.worldBounds).reduce(nil) { acc, f in acc.map { $0.union(f) } ?? f }!
+        let target = snap(center)
+        let dx = target.x - box.midX, dy = target.y - box.midY
+        let active = activeLayerID
+        var map: [UUID: UUID] = [:], groups: [UUID: UUID] = [:], added = Set<UUID>()
+        let makeGroup = sub.shapes.count > 1 && sub.shapes.allSatisfy { $0.group == nil } ? UUID() : nil
+        mutate(name) { d in
+            for var s in sub.shapes {
+                let old = s.id
+                s.id = UUID(); s.locked = false; s.layer = active
+                if let g = s.group { if groups[g] == nil { groups[g] = UUID() }; s.group = groups[g] } else { s.group = makeGroup }
+                s.frame.origin.x += dx; s.frame.origin.y += dy
+                if themed, let theme = d.theme { theme.apply(to: &s.style, kind: s.kind) }
+                map[old] = s.id
+                d.shapes.append(s)
+                added.insert(s.id)
+            }
+            for var c in sub.connectors {
+                guard let f = map[c.from], let t = map[c.to] else { continue }
+                c.id = UUID(); c.from = f; c.to = t; c.layer = active; c.locked = false
+                if themed, let theme = d.theme { theme.applyToConnector(&c.style) }
+                d.connectors.append(c)
+                added.insert(c.id)
+            }
+        }
+        selection = added
+    }
+
+    // MARK: Library drops
+
+    /// Called with a library item id and a canvas point when something is dragged here from the Shape Library.
+    var onLibraryDrop: ((String, CGPoint) -> Void)?
+    private static let libraryDragType = NSPasteboard.PasteboardType("mx.graffle.library-item")
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        sender.draggingPasteboard.types?.contains(Self.libraryDragType) == true ? .copy : []
+    }
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { draggingEntered(sender) }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let id = sender.draggingPasteboard.string(forType: Self.libraryDragType) else { return false }
+        onLibraryDrop?(id, convert(sender.draggingLocation, from: nil))
+        return true
+    }
+
+    /// Center of the part of the canvas currently on screen.
+    var visibleCenter: CGPoint { CGPoint(x: visibleRect.midX, y: visibleRect.midY) }
 
     /// Top-left of the part of the canvas currently on screen, for placing imports where the user is looking.
     var visibleOrigin: CGPoint {
@@ -1946,6 +2218,22 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
         }
     }
 
+    // MARK: Rotate
+
+    /// Arrange → Rotate: turns each selected shape a quarter turn about its own center (tag 0 clockwise, 1 counterclockwise).
+    @objc func rotateQuarter(_ sender: NSMenuItem) {
+        let step: Double = sender.tag == 0 ? 90 : -90
+        let movable = selectedShapes.filter { !$0.locked }
+        guard !movable.isEmpty else { return }
+        let box = movable.map(\.worldBounds).reduce(nil) { acc, f in acc.map { $0.union(f) } ?? f }!
+        let ids = Set(movable.map(\.id))
+        mutate("Rotate") { d in
+            var turned = d.shapes.filter { ids.contains($0.id) }
+            Drafting.rotate(&turned, by: step, about: CGPoint(x: box.midX, y: box.midY))
+            for t in turned { if let i = d.shapes.firstIndex(where: { $0.id == t.id }) { d.shapes[i] = t } }
+        }
+    }
+
     // MARK: Lock
 
     @objc func lockSelection(_ sender: Any?) { setLocked(true) }
@@ -2176,6 +2464,8 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
             return selectedShapes.count >= 3
         case #selector(matchSize(_:)):
             return selectedShapes.count >= 2
+        case #selector(rotateQuarter(_:)):
+            return selectedShapes.contains { !$0.locked }
         case #selector(copyStyle(_:)):
             return !selection.isEmpty
         case #selector(pasteStyle(_:)):

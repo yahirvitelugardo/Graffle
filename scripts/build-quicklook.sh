@@ -16,6 +16,9 @@ mkdir -p "$EXT/Contents/MacOS"
 # Only the model and drawing code: no windows, inspector or menus.
 SOURCES=(
   Sources/Graffle/Model.swift
+  Sources/Graffle/Drafting/Units.swift
+  Sources/Graffle/Drafting/Dimensions.swift
+  Sources/Graffle/Drafting/Drafting.swift
   Sources/Graffle/Render.swift
   Sources/Graffle/UI/Tokens.swift
   Sources/Graffle/CodeGen/DiagramSource.swift

@@ -26,6 +26,7 @@ extension AppDelegate {
         }
         func pump(_ s: Double) { RunLoop.main.run(until: Date().addingTimeInterval(s)) }
         func ready() {
+            wc.setLibrary(false, persist: false)                                           // whether the real app left the Shape Library open must not matter
             wc.window?.setContentSize(NSSize(width: 1320, height: 840))
             wc.window?.orderFront(nil)
             wc.window?.contentView?.layoutSubtreeIfNeeded()
@@ -35,7 +36,7 @@ extension AppDelegate {
             ready(); load()
             let ids = wc.window?.toolbar?.items.map(\.itemIdentifier.rawValue) ?? []
             return wc.window?.toolbarStyle == .unified && wc.window?.titlebarAppearsTransparent == true && wc.window?.titleVisibility == .hidden
-                && ids == ["sidebar", "title", "NSToolbarFlexibleSpaceItem", "undo", "redo", "export", "share"]
+                && ids == ["sidebar", "library", "title", "NSToolbarFlexibleSpaceItem", "undo", "redo", "export", "share"]
         }))
         steps.append(("window: sidebar, canvas and inspector are separate cards with 10 pt gutters; rulers start hidden", {
             ready()
@@ -139,8 +140,8 @@ extension AppDelegate {
             let synced = wc.dock.buttons.filter { $0.1.isActive }.map(\.0) == [.pen]
             wc.canvas.tool = .select
             let size = wc.dock.buttons.allSatisfy { abs($0.1.bounds.width - 40) < 0.5 && abs($0.1.bounds.height - 40) < 0.5 }
-            let centered = abs(wc.dock.convert(wc.dock.bounds, to: nil).midX - (wc.window?.contentView?.convert(wc.canvas.enclosingScrollView!.frame, from: wc.canvas.enclosingScrollView?.superview).midX ?? 0)) < 200
-            return tools.count == 11 && keys.contains("Select (V)") && keys.contains("Pan (H)") && keys.contains("Triangle (Y)") && keys.contains("Ellipse (O)")
+            let centered = abs(wc.dock.convert(wc.dock.bounds, to: nil).midX - (wc.window?.contentView?.convert(wc.canvas.enclosingScrollView!.frame, from: wc.canvas.enclosingScrollView?.superview).midX ?? 0)) < 260        // it gives way to the minimap, so it may sit left of center
+            return tools.count == 13 && keys.contains("Wall (as thick as the drawing scale says) (W)") && keys.contains("Select (V)") && keys.contains("Pan (H)") && keys.contains("Triangle (Y)") && keys.contains("Ellipse (O)")
                 && active && synced && size && centered && wc.dock.buttons.allSatisfy { $0.1.accessibilityLabel() != nil }
         }))
         steps.append(("dock: single-key shortcuts (V H Z R U O D Y T C P) pick tools, and Pan scrolls the canvas by dragging", {

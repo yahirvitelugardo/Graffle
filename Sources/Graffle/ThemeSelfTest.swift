@@ -208,7 +208,7 @@ extension AppDelegate {
             return first && galleryPictures && second && ids.contains("clay") && pictures && wentBack && picked && fresh
                 && Array(DocumentTemplate.all.prefix(3).map(\.kind)) == [.blank, .architecture, .classes]
                 && DocumentTemplate.all.map(\.title) == ["Blank Diagram", "Software Architecture Diagram", "Classes Diagram", "UML Diagram", "Entity-Relationship Diagram",
-                    "Conceptual Diagram", "Synoptic Diagram", "Pyramid Diagram", "Ishikawa Diagram", "Tree Diagram"]
+                    "Conceptual Diagram", "Synoptic Diagram", "Pyramid Diagram", "Ishikawa Diagram", "Tree Diagram", "Circuit Diagram", "Floor Plan"]
         }))
         steps.append(("themes: an imported theme shows up in an open New Document window", {
             let window = NewDocumentController.presentNewDocument { _ in }

@@ -13,6 +13,15 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     private(set) var contextBar: ContextBar!
     private var overlayView: NSView!
 
+    let library = LibraryView()
+    private let libraryCard = SurfaceView(frame: .zero)
+    private var libraryWidth: NSLayoutConstraint!
+    private var libraryGap: NSLayoutConstraint!
+    private static let libraryKey = "ui.libraryVisible"
+    /// Whether the user wants the Shape Library open (it also folds away by itself in a narrow window).
+    var libraryWanted = UserDefaults.standard.bool(forKey: libraryKey)
+    private(set) var libraryShown = false
+    private let libraryToggle = IconButton(symbol: "square.grid.2x2", label: "Toggle Shape Library", tip: "Show or hide the Shape Library (⌃⌘L)", size: 30, pointSize: 15)
     private let sidebarCard = SurfaceView(frame: .zero)
     private let canvasCard = SurfaceView(frame: .zero)
     private let inspectorCard = SurfaceView(frame: .zero)
@@ -62,7 +71,8 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         sidebarCard.fill = Tok.panelBG; sidebarCard.outline = Tok.panelOutline; sidebarCard.radius = Tok.Radius.window
         inspectorCard.fill = Tok.panelBG; inspectorCard.outline = Tok.panelOutline; inspectorCard.radius = Tok.Radius.window
         canvasCard.fill = Tok.canvasBG; canvasCard.outline = Tok.panelOutline; canvasCard.radius = Tok.Radius.window
-        for card in [sidebarCard, canvasCard, inspectorCard] {
+        libraryCard.fill = Tok.panelBG; libraryCard.outline = Tok.panelOutline; libraryCard.radius = Tok.Radius.window
+        for card in [sidebarCard, libraryCard, canvasCard, inspectorCard] {
             card.translatesAutoresizingMaskIntoConstraints = false
             card.layer?.masksToBounds = true
             root.addSubview(card)
@@ -102,10 +112,14 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         sidebarCard.addSubview(sidebar)
         inspector.translatesAutoresizingMaskIntoConstraints = false
         inspectorCard.addSubview(inspector)
+        library.translatesAutoresizingMaskIntoConstraints = false
+        libraryCard.addSubview(library)
 
         let gutter = Tok.Space.gutter
         sidebarWidth = sidebarCard.widthAnchor.constraint(equalToConstant: 236)
-        sidebarGap = canvasCard.leadingAnchor.constraint(equalTo: sidebarCard.trailingAnchor, constant: Tok.Space.cardGap)
+        sidebarGap = libraryCard.leadingAnchor.constraint(equalTo: sidebarCard.trailingAnchor, constant: Tok.Space.cardGap)
+        libraryWidth = libraryCard.widthAnchor.constraint(equalToConstant: 0)
+        libraryGap = canvasCard.leadingAnchor.constraint(equalTo: libraryCard.trailingAnchor, constant: 0)
         let guide = root.safeAreaLayoutGuide
         // Without a preferred size the window shrinks to the Auto Layout minimum.
         let preferredW = root.widthAnchor.constraint(equalToConstant: 1320), preferredH = root.heightAnchor.constraint(equalToConstant: 840)
@@ -116,7 +130,10 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
 
             sidebarCard.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: gutter),
             sidebarCard.topAnchor.constraint(equalTo: guide.topAnchor), sidebarCard.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -gutter),
-            sidebarWidth, sidebarGap,
+            sidebarWidth, sidebarGap, libraryWidth, libraryGap,
+            libraryCard.topAnchor.constraint(equalTo: guide.topAnchor), libraryCard.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -gutter),
+            library.leadingAnchor.constraint(equalTo: libraryCard.leadingAnchor), library.trailingAnchor.constraint(equalTo: libraryCard.trailingAnchor),
+            library.topAnchor.constraint(equalTo: libraryCard.topAnchor), library.bottomAnchor.constraint(equalTo: libraryCard.bottomAnchor),
             canvasCard.topAnchor.constraint(equalTo: guide.topAnchor), canvasCard.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -gutter),
             inspectorCard.leadingAnchor.constraint(equalTo: canvasCard.trailingAnchor, constant: Tok.Space.cardGap),
             inspectorCard.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -gutter),
@@ -147,12 +164,13 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         window.setContentSize(NSSize(width: 1320, height: 840))
         window.center()
         applySidebar(animated: false)
+        applyLibrary(animated: false)
     }
 
     // MARK: Toolbar
 
     private enum Item {
-        static let sidebar = NSToolbarItem.Identifier("sidebar"), title = NSToolbarItem.Identifier("title")
+        static let sidebar = NSToolbarItem.Identifier("sidebar"), library = NSToolbarItem.Identifier("library"), title = NSToolbarItem.Identifier("title")
         static let undo = NSToolbarItem.Identifier("undo"), redo = NSToolbarItem.Identifier("redo")
         static let export = NSToolbarItem.Identifier("export"), share = NSToolbarItem.Identifier("share")
     }
@@ -168,6 +186,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         titleButton.toolTip = "Rename, duplicate or move this document"
         pageLabel.font = .systemFont(ofSize: 11.5); pageLabel.textColor = Tok.textSecondary
         sidebarToggle.target = self; sidebarToggle.action = #selector(toggleSidebar(_:))
+        libraryToggle.target = self; libraryToggle.action = #selector(toggleLibrary(_:))
         undoButton.target = canvas; undoButton.action = #selector(CanvasView.undo(_:))
         redoButton.target = canvas; redoButton.action = #selector(CanvasView.redo(_:))
         exportButton.target = self; exportButton.action = #selector(showExportMenu(_:))
@@ -185,7 +204,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [Item.sidebar, Item.title, .flexibleSpace, Item.undo, Item.redo, Item.export, Item.share]
+        [Item.sidebar, Item.library, Item.title, .flexibleSpace, Item.undo, Item.redo, Item.export, Item.share]
     }
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { toolbarDefaultItemIdentifiers(toolbar) }
 
@@ -194,6 +213,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         item.isBordered = false
         switch id {
         case Item.sidebar: item.view = sidebarToggle; item.label = "Sidebar"
+        case Item.library: item.view = libraryToggle; item.label = "Shape Library"
         case Item.title:
             let stack = NSStackView(views: [titleButton, pageLabel])
             stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 0
@@ -270,7 +290,86 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         }
     }
 
-    func windowDidResize(_ notification: Notification) { applySidebar(animated: true) }
+    // MARK: Shape Library
+
+    @objc func toggleLibrary(_ sender: Any?) { setLibrary(!libraryWanted, persist: true) }
+
+    /// Opens or closes the Shape Library; `persist: false` leaves the saved preference alone (self-tests).
+    func setLibrary(_ on: Bool, persist: Bool) {
+        libraryWanted = on
+        if persist { UserDefaults.standard.set(on, forKey: Self.libraryKey) }
+        applyLibrary(animated: persist)
+    }
+
+    /// Opens or folds the Shape Library card; a window narrower than 1180 points has no room for it next to the sidebar.
+    func applyLibrary(animated: Bool) {
+        let narrow = (window?.contentView?.bounds.width ?? 1320) < 1180
+        let show = libraryWanted && !narrow
+        guard show != libraryShown || !animated else { return }
+        libraryShown = show
+        libraryToggle.isActive = libraryWanted
+        let apply = { [self] in
+            libraryWidth.constant = show ? 252 : 0
+            libraryGap.constant = show ? Tok.Space.cardGap : 0
+            libraryCard.alphaValue = show ? 1 : 0
+        }
+        libraryCard.isHidden = false
+        if animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.18; ctx.allowsImplicitAnimation = true
+                apply(); window?.contentView?.layoutSubtreeIfNeeded()
+            }, completionHandler: { [self] in libraryCard.isHidden = !show })
+        } else {
+            apply(); libraryCard.isHidden = !show
+        }
+    }
+
+    /// Puts a library item on the canvas, in the middle of the view or at `point`.
+    func insertLibraryItem(_ item: LibraryItem, at point: CGPoint? = nil) {
+        let number = canvas.drawing.shapes.filter { $0.name == item.name }.count + 1
+        let k = item.realSize != nil ? (canvas.drawing.scale ?? .standard).pointsPerCentimeter : 1          // real-world parts follow the drawing scale
+        let drawing = item.drawing(layer: canvas.activeLayerID, style: canvas.defaultStyle, number: number, pointsPerCentimeter: k)
+        canvas.placeDrawing(drawing, named: "Add \(item.name)", near: point ?? canvas.visibleCenter, themed: item.usesCurrentStyle || item.circuit != nil)
+        window?.makeFirstResponder(canvas)
+    }
+
+    /// Asks for a name and saves the selected objects as a new shape in "My Shapes".
+    func saveSelectionToLibrary() {
+        guard let sub = canvas.selectionDrawing(), let window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Save to Shape Library"
+        alert.informativeText = "The selected objects become a shape in “My Shapes”, ready to use in any diagram."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        field.stringValue = sub.shapes.count == 1 ? sub.shapes[0].displayName : "My Shape"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            if ShapeLibrary.shared.add(name: field.stringValue, drawing: sub) != nil {
+                self?.library.setQuery("")
+                if self?.libraryWanted == false { self?.toggleLibrary(nil) }
+            }
+        }
+        alert.window.makeFirstResponder(field)
+    }
+
+    func renameLibraryItem(_ item: LibraryItem) {
+        guard let window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Rename Shape"
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        field.stringValue = item.name
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { response in
+            if response == .alertFirstButtonReturn { ShapeLibrary.shared.rename(item.id, to: field.stringValue) }
+        }
+        alert.window.makeFirstResponder(field)
+    }
+
+    func windowDidResize(_ notification: Notification) { applySidebar(animated: true); applyLibrary(animated: true) }
 
     // MARK: Wiring
 
@@ -284,7 +383,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
             updateContextBar()
         }
         canvas.onActiveLayerChange = { [weak self] in self?.sidebar.reload() }
-        canvas.onSelectionChange = { [weak self] in self?.inspector.refresh(); self?.sidebar.syncSelection(); self?.updateContextBar() }
+        canvas.onSelectionChange = { [weak self] in self?.library.setCanSave(!(self?.canvas.selection.isEmpty ?? true)); self?.inspector.refresh(); self?.sidebar.syncSelection(); self?.updateContextBar() }
         canvas.onToolChange = { [weak self] in self?.syncToolButtons() }
         dock.onPick = { [weak self] tool in
             self?.canvas.tool = tool
@@ -292,6 +391,13 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         }
         inspector.canvas = canvas
         sidebar.canvas = canvas
+        library.onInsert = { [weak self] item in self?.insertLibraryItem(item) }
+        library.onSaveSelection = { [weak self] in self?.saveSelectionToLibrary() }
+        library.grid.onRename = { [weak self] item in self?.renameLibraryItem(item) }
+        library.grid.onDelete = { item in ShapeLibrary.shared.remove(item.id) }
+        canvas.onLibraryDrop = { [weak self] id, point in
+            if let item = ShapeLibrary.shared.item(id) { self?.insertLibraryItem(item, at: point) }
+        }
         zoomOverlay.attach(canvas)
         zoomOverlay.isHidden = !NavigatorPrefs.isVisible
         NotificationCenter.default.addObserver(forName: .navigatorVisibilityChanged, object: nil, queue: nil) { [weak self] _ in
@@ -326,6 +432,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         let clip = scroll.contentView
         NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: clip, queue: .main) { [weak self] _ in self?.updateContextBar() }
         applySidebar(animated: false)
+        applyLibrary(animated: false)
     }
 
     // MARK: Window delegate
@@ -349,6 +456,11 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
+        case #selector(toggleOrtho(_:)): menuItem.state = canvas.orthoMode ? .on : .off
+        case #selector(toggleObjectSnap(_:)): menuItem.state = canvas.objectSnap ? .on : .off
+        case #selector(addDimension(_:)): return canvas.canAddDimension
+        case #selector(editMeasurement(_:)): return canvas.selectedDimension != nil || canvas.selectedLineInfo != nil
+        case #selector(toggleLibrary(_:)): menuItem.title = libraryWanted ? "Hide Shape Library" : "Show Shape Library"
         case #selector(toggleRulers(_:)): menuItem.title = scroll.rulersVisible ? "Hide Rulers" : "Show Rulers"
         case #selector(toggleSmartGuides(_:)): menuItem.state = canvas.smartGuides ? .on : .off
         case #selector(toggleGrid(_:)): menuItem.state = canvas.showGrid ? .on : .off
@@ -389,6 +501,17 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     }
     @objc func toggleGrid(_ s: Any?) { canvas.showGrid.toggle() }
     @objc func toggleSnap(_ s: Any?) { canvas.snapToGrid.toggle() }
+
+    // MARK: Circuit
+
+    /// Circuit → (category) → part: puts the symbol in the middle of the view, labelled R1, C2, ... in order.
+    @objc func insertCircuitPart(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let part = CircuitPart(rawValue: raw) else { return }
+        let number = canvas.drawing.shapes.filter { $0.name == part.title }.count + 1
+        let shape = part.makeShape(layer: canvas.activeLayerID, at: .zero, number: number)
+        canvas.addObjects([shape], named: "Add \(part.title)", near: canvas.visibleCenter)
+        window?.makeFirstResponder(canvas)
+    }
 
     // MARK: Import and export
 

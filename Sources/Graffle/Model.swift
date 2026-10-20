@@ -328,10 +328,15 @@ struct Shape: Codable, Identifiable, Equatable {
     var locked = false
     /// What the layers list and the inspector call it; empty means "name it after its text or its kind".
     var name: String? = nil
+    /// Where wires attach, as points normalized to the frame (electronic symbols have them at the ends of their leads).
+    /// Nil = connectors attach to the outline.
+    var pins: [CGPoint]? = nil
 
     init(id: UUID = UUID(), layer: UUID, kind: ShapeKind, frame: CGRect, style: Style = Style(), text: String = "",
-         rotation: Double = 0, group: UUID? = nil, outline: [PathSegment]? = nil, locked: Bool = false, name: String? = nil) {
+         rotation: Double = 0, group: UUID? = nil, outline: [PathSegment]? = nil, locked: Bool = false, name: String? = nil,
+         pins: [CGPoint]? = nil) {
         self.name = name
+        self.pins = pins
         self.id = id; self.layer = layer; self.kind = kind; self.frame = frame
         self.style = style; self.text = text; self.rotation = rotation; self.group = group; self.outline = outline
         self.locked = locked
@@ -347,6 +352,7 @@ struct Shape: Codable, Identifiable, Equatable {
         style = try c.decode(Style.self, forKey: .style)
         text = try c.decode(String.self, forKey: .text)
         name = try c.decodeIfPresent(String.self, forKey: .name)
+        pins = try c.decodeIfPresent([CGPoint].self, forKey: .pins)
         rotation = try c.decodeIfPresent(Double.self, forKey: .rotation) ?? 0
         group = try c.decodeIfPresent(UUID.self, forKey: .group)
         outline = try c.decodeIfPresent([PathSegment].self, forKey: .outline)
@@ -367,10 +373,13 @@ struct Connector: Codable, Identifiable, Equatable {
     var text = ""
     /// A locked connector can't be deleted, re-routed or relabelled.
     var locked = false
+    /// Set for dimension lines, which measure the shapes they join (see `Dimensions`).
+    var dimension: DimensionSpec? = nil
 
     init(id: UUID = UUID(), layer: UUID, from: UUID, to: UUID, route: Route = .straight, startHead: HeadKind = .none,
          endHead: HeadKind = .filledArrow, headScale: Double = 1, style: Style = .connector, text: String = "",
-         locked: Bool = false) {
+         locked: Bool = false, dimension: DimensionSpec? = nil) {
+        self.dimension = dimension
         self.id = id; self.layer = layer; self.from = from; self.to = to; self.route = route
         self.startHead = startHead; self.endHead = endHead; self.headScale = headScale
         self.style = style; self.text = text; self.locked = locked
@@ -390,6 +399,7 @@ struct Connector: Codable, Identifiable, Equatable {
         style = try c.decode(Style.self, forKey: .style)
         text = try c.decode(String.self, forKey: .text)
         locked = try c.decodeIfPresent(Bool.self, forKey: .locked) ?? false
+        dimension = try c.decodeIfPresent(DimensionSpec.self, forKey: .dimension)
     }
 }
 
@@ -403,13 +413,20 @@ struct Drawing: Codable, Equatable {
     var theme: ThemeDefinition? = nil
     /// What the diagram was made from, so code can be generated from it later (nil for diagrams drawn by hand).
     var source: DiagramSource? = nil
+    /// What a canvas point stands for in the real world (for dimensions and real-size library items). Nil = 1 point per centimeter.
+    var scale: DrawingScale? = nil
 
     func layer(_ id: UUID) -> Layer? { layers.first { $0.id == id } }
 
     var contentBounds: CGRect? {
         let visible = Set(layers.filter(\.visible).map(\.id))
-        return shapes.filter { visible.contains($0.layer) }.map(\.worldBounds)
-            .reduce(nil) { acc, f in acc.map { $0.union(f) } ?? f }
+        var boxes = shapes.filter { visible.contains($0.layer) }.map(\.worldBounds)
+        // Dimension lines sit outside what they measure.
+        for c in connectors where c.dimension != nil && visible.contains(c.layer) {
+            guard let a = shapes.first(where: { $0.id == c.from }), let b = shapes.first(where: { $0.id == c.to }) else { continue }
+            boxes.append(ConnectorGeometry.make(c, a, b, scale: scale).path.boundingBoxOfPath.insetBy(dx: -24, dy: -10))
+        }
+        return boxes.reduce(nil) { acc, f in acc.map { $0.union(f) } ?? f }
     }
 }
 
@@ -498,6 +515,26 @@ extension Shape {
         return path().copy(using: &t) ?? path()
     }
 
+    /// For shapes with pins: the pin that faces `target` best (ties go to the nearer one), with its outward direction.
+    func pinFacing(_ target: CGPoint) -> (point: CGPoint, normal: CGPoint)? {
+        guard let pins, !pins.isEmpty else { return nil }
+        let dx = target.x - center.x, dy = target.y - center.y
+        let len = max(hypot(dx, dy), 0.0001)
+        let dir = CGPoint(x: dx / len, y: dy / len)
+        let r = radians
+        var found: [(point: CGPoint, normal: CGPoint, score: CGFloat, dist: CGFloat)] = []
+        for p in pins {
+            let local = CGPoint(x: frame.minX + p.x * frame.width, y: frame.minY + p.y * frame.height)
+            let ox = local.x - center.x, oy = local.y - center.y
+            let n = abs(ox) >= abs(oy) ? CGPoint(x: ox < 0 ? -1 : 1, y: 0) : CGPoint(x: 0, y: oy < 0 ? -1 : 1)
+            let nw = CGPoint(x: n.x * cos(r) - n.y * sin(r), y: n.x * sin(r) + n.y * cos(r))
+            let world = toWorld(local)
+            found.append((world, nw, nw.x * dir.x + nw.y * dir.y, hypot(world.x - target.x, world.y - target.y)))
+        }
+        let best = found.map(\.score).max() ?? 0
+        return found.filter { $0.score >= best - 0.3 }.min { $0.dist < $1.dist }.map { ($0.point, $0.normal) }
+    }
+
     func sideMidpoint(_ side: Side) -> CGPoint { toWorld(localSideMidpoint(side)) }
 
     private func localSideMidpoint(_ side: Side) -> CGPoint {
@@ -562,8 +599,12 @@ struct ConnectorGeometry {
     var endPoint: CGPoint
     var endAngle: CGFloat     // direction pointing out of the line at the end
     var labelPoint: CGPoint
+    /// For dimension lines: the measured length as text, and in canvas points.
+    var measureText: String? = nil
+    var measuredLength: Double? = nil
 
-    static func make(_ c: Connector, _ a: Shape, _ b: Shape) -> ConnectorGeometry {
+    static func make(_ c: Connector, _ a: Shape, _ b: Shape, scale: DrawingScale? = nil) -> ConnectorGeometry {
+        if let spec = c.dimension { return Dimensions.geometry(c, spec, a, b, scale: scale) }
         switch c.route {
         case .straight: return straight(a, b)
         case .curved: return curved(a, b)
@@ -575,8 +616,8 @@ struct ConnectorGeometry {
     private static func angle(from p: CGPoint, to q: CGPoint) -> CGFloat { atan2(q.y - p.y, q.x - p.x) }
 
     private static func straight(_ a: Shape, _ b: Shape) -> ConnectorGeometry {
-        let p1 = a.boundaryPoint(toward: b.center)
-        let p2 = b.boundaryPoint(toward: a.center)
+        let p1 = a.pinFacing(b.center)?.point ?? a.boundaryPoint(toward: b.center)
+        let p2 = b.pinFacing(a.center)?.point ?? b.boundaryPoint(toward: a.center)
         let path = CGMutablePath()
         path.move(to: p1)
         path.addLine(to: p2)
@@ -587,6 +628,7 @@ struct ConnectorGeometry {
 
     /// The side of `s` whose outward normal (after rotation) points most directly at `target`.
     private static func facingSide(of s: Shape, toward target: CGPoint) -> (point: CGPoint, normal: CGPoint) {
+        if let pin = s.pinFacing(target) { return pin }
         let dx = target.x - s.center.x, dy = target.y - s.center.y
         let len = max(hypot(dx, dy), 0.0001)
         let dir = CGPoint(x: dx / len, y: dy / len)
@@ -626,9 +668,15 @@ struct ConnectorGeometry {
     }
 
     private static func orthogonal(_ a: Shape, _ b: Shape, rounded: Bool) -> ConnectorGeometry {
-        let (p1, p2, _, _, horizontal) = anchors(a, b)
+        let (p1, p2, n1, n2, horizontal) = anchors(a, b)
         var pts = [p1]
-        if horizontal {
+        // Symbols with pins leave and enter along their leads: a horizontal lead meeting a vertical one needs a single corner.
+        let perpendicular = (a.pins != nil || b.pins != nil) && abs(n1.x) + abs(n1.y) > 0.5
+            && abs(n1.x * n2.x + n1.y * n2.y) < 0.1
+            && (abs(n1.x) > 0.9 || abs(n1.y) > 0.9) && (abs(n2.x) > 0.9 || abs(n2.y) > 0.9)
+        if perpendicular {
+            pts.append(abs(n1.x) > 0.9 ? CGPoint(x: p2.x, y: p1.y) : CGPoint(x: p1.x, y: p2.y))
+        } else if horizontal {
             let mx = (p1.x + p2.x) / 2
             pts += [CGPoint(x: mx, y: p1.y), CGPoint(x: mx, y: p2.y)]
         } else {
@@ -654,7 +702,7 @@ struct ConnectorGeometry {
         func far(_ from: CGPoint, _ others: [CGPoint]) -> CGPoint? { others.first { hypot($0.x - from.x, $0.y - from.y) > 0.5 } }
         let startRef = far(p1, Array(pts.dropFirst())) ?? p2
         let endRef = far(p2, Array(pts.dropLast().reversed())) ?? p1
-        let label = CGPoint(x: (pts[1].x + pts[2].x) / 2, y: (pts[1].y + pts[2].y) / 2)
+        let label = pts.count == 3 ? pts[1] : CGPoint(x: (pts[1].x + pts[2].x) / 2, y: (pts[1].y + pts[2].y) / 2)
         return ConnectorGeometry(path: path, startPoint: p1, startAngle: angle(from: startRef, to: p1),
                                  endPoint: p2, endAngle: angle(from: endRef, to: p2), labelPoint: label)
     }

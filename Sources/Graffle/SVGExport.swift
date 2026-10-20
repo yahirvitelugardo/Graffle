@@ -103,7 +103,7 @@ enum SVGExport {
                 var items: [String] = []
                 for c in drawing.connectors where c.layer == layer.id {
                     guard let a = shapesByID[c.from], let z = shapesByID[c.to] else { continue }
-                    items.append(connector(c, ConnectorGeometry.make(c, a, z)))
+                    items.append(connector(c, ConnectorGeometry.make(c, a, z, scale: drawing.scale)))
                 }
                 for s in drawing.shapes where s.layer == layer.id { items.append(shape(s)) }
                 let gid = "layer-" + String(layer.id.uuidString.prefix(8)).lowercased()
@@ -260,21 +260,22 @@ enum SVGExport {
                 if st.shadow.enabled { line = "<g filter=\"url(#\(shadowFilter(st.shadow)))\">\(line)</g>" }
                 parts.append(line)
             }
-            if !c.text.isEmpty { parts.append(label(c, at: g.labelPoint)) }
+            let text = c.text.isEmpty ? (g.measureText ?? "") : c.text
+            if !text.isEmpty { parts.append(label(c, text, at: g.labelPoint)) }
             var inner = parts.joined(separator: "\n")
             if st.opacity < 0.999 { inner = "<g opacity=\"\(SVGExport.n(st.opacity))\">\n\(inner)\n</g>" }
             return "<g id=\"connector-\(String(c.id.uuidString.prefix(8)).lowercased())\">\n\(inner)\n</g>"
         }
 
-        func label(_ c: Connector, at p: CGPoint) -> String {
+        func label(_ c: Connector, _ text: String, at p: CGPoint) -> String {
             let t = c.style.text
             let color = t.color?.ns ?? .black
-            let str = NSAttributedString(string: c.text, attributes: Render.attributes(t, color: color))
+            let str = NSAttributedString(string: text, attributes: Render.attributes(t, color: color))
             let size = str.size()
             let font = Render.font(t)
             let rect = CGRect(x: p.x - size.width / 2 - 4, y: p.y - size.height / 2 - 1, width: size.width + 8, height: size.height + 2)
             let bg = "<rect x=\"\(SVGExport.n(rect.minX))\" y=\"\(SVGExport.n(rect.minY))\" width=\"\(SVGExport.n(rect.width))\" height=\"\(SVGExport.n(rect.height))\" rx=\"3\" fill=\"#ffffff\"/>"
-            let line = TextLine(text: c.text, baseline: font.ascender)
+            let line = TextLine(text: text, baseline: font.ascender)
             // The canvas draws the string with its top at rect.minY + 1.
             return bg + textTag(lines: [line], x: p.x, top: rect.minY + 1, format: t, anchor: "middle", color: color)
         }
