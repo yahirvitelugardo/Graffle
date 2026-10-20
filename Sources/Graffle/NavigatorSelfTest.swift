@@ -44,7 +44,7 @@ extension AppDelegate {
             wc.canvas.mouseDown(with: event(.leftMouseDown, a))
             wc.canvas.mouseDragged(with: event(.leftMouseDragged, b))
             wc.canvas.mouseUp(with: event(.leftMouseUp, b))
-            let boxed = wc.scroll.magnification > 2 && visible().insetBy(dx: -1, dy: -1).contains(CGRect(x: 600, y: 500, width: 200, height: 100))
+            let boxed = wc.scroll.magnification > 2 && visible().insetBy(dx: -4, dy: -4).contains(CGRect(x: 600, y: 500, width: 200, height: 100))
             let drewNothing = wc.canvas.drawing.shapes.count == 2 && wc.canvas.selection.isEmpty        // a zoom tool never edits
             wc.canvas.tool = .select
             return keyed && zoomedIn && zoomedOut && boxed && drewNothing

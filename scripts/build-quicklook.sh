@@ -17,6 +17,7 @@ mkdir -p "$EXT/Contents/MacOS"
 SOURCES=(
   Sources/Graffle/Model.swift
   Sources/Graffle/Render.swift
+  Sources/Graffle/UI/Tokens.swift
   Sources/Graffle/Theme/RenderEffects.swift
   Sources/Graffle/Theme/ThemeDefinition.swift
   Sources/Graffle/Theme/ThemeApply.swift
