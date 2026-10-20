@@ -170,6 +170,14 @@ extension AppDelegate {
             wc.scroll.magnification = 1
             return keys && (moved || (after != before && after.x > before.x))
         }))
+        steps.append(("window: the zoom pill sits under the minimap, inside the canvas", {
+            ready(); load(); pump(0.3)
+            wc.window?.contentView?.layoutSubtreeIfNeeded()
+            let z = wc.zoomOverlay
+            func subs(_ v: NSView) -> [NSView] { v.subviews + v.subviews.flatMap(subs) }
+            let pills = subs(z).compactMap { $0 as? FloatingSurface }
+            return pills.count == 2 && pills.allSatisfy { $0.frame.height > 20 } && z.bounds.height > 130
+        }))
         steps.append(("window: undo and redo buttons follow the history, Share and Export open the export menu", {
             ready(); load()
             pump(0.05)

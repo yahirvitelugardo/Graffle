@@ -100,11 +100,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             wc.canvas.scrollCenter(to: CGPoint(x: 300, y: 250))
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 if let win = wc.window {
+                    NSApp.activate(ignoringOtherApps: true); win.orderFrontRegardless()
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.8))
                     // The composited window as the screen shows it (blurs included), when the system still offers that.
                     let shot = Process()
                     shot.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
                     shot.arguments = ["-x", "-o", "-l", "\(win.windowNumber)", out]
                     try? shot.run(); shot.waitUntilExit()
+                    if !FileManager.default.fileExists(atPath: out), let content = win.contentView, let rep = content.bitmapImageRepForCachingDisplay(in: content.bounds) {
+                        content.cacheDisplay(in: content.bounds, to: rep)           // the screen isn't available: draw the view tree instead (blurs show as black)
+                        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out))
+                    }
                     print("window", win.frame.size)
                 }
                 exit(0)

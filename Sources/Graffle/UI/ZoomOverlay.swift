@@ -4,7 +4,7 @@ import AppKit
 final class ZoomOverlay: NSView {
     let map = NavigatorMapView()
     private let mapSurface = FloatingSurface(radius: Tok.Radius.card)
-    private let pill = FloatingSurface(radius: 999)
+    private let pill = FloatingSurface(radius: 18)      // half its height: a capsule
     private let zoomOut = IconButton(symbol: "minus", label: "Zoom out", tip: "Zoom out (⌘−)", size: 30, pointSize: 12)
     private let zoomIn = IconButton(symbol: "plus", label: "Zoom in", tip: "Zoom in (⌘+)", size: 30, pointSize: 12)
     private let percent = NSButton()
