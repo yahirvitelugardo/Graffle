@@ -13,18 +13,16 @@ private final class Action: NSObject {
 
 private func makeLabel(_ s: String) -> NSTextField {
     let l = NSTextField(labelWithString: s)
-    l.font = .systemFont(ofSize: 11)
-    l.textColor = .secondaryLabelColor
+    l.font = Tok.Font.label()
+    l.textColor = Tok.textSecondary
     l.widthAnchor.constraint(equalToConstant: 66).isActive = true
     return l
 }
 
-/// A section with a clickable header that folds its body away.
+/// A card in the inspector: a titled group of controls on a rounded, outlined surface.
 private final class DisclosureSection: NSStackView {
     let title: String
     private let body: NSStackView
-    private let button = NSButton()
-    private(set) var collapsed = false
 
     init(_ title: String, _ views: [NSView]) {
         self.title = title
@@ -37,38 +35,32 @@ private final class DisclosureSection: NSStackView {
 
         orientation = .vertical
         alignment = .leading
-        spacing = 8
+        spacing = 10
+        edgeInsets = NSEdgeInsets(top: Tok.Space.cardPadding, left: Tok.Space.cardPadding, bottom: Tok.Space.cardPadding, right: Tok.Space.cardPadding)
+        wantsLayer = true
+        layer?.cornerRadius = Tok.Radius.card
+        layer?.cornerCurve = .continuous
+        layer?.borderWidth = 0.5
+        updateCard()
 
-        button.isBordered = false
-        button.imagePosition = .imageLeading
-        button.alignment = .left
-        button.attributedTitle = NSAttributedString(string: " " + title.uppercased(), attributes: [
-            .font: NSFont.systemFont(ofSize: 10, weight: .semibold), .foregroundColor: NSColor.secondaryLabelColor,
-        ])
-        button.target = self
-        button.action = #selector(toggle)
-        // A hairline above every section; it hides with the section, so only visible sections are divided.
-        let rule = NSBox()
-        rule.boxType = .separator
-        rule.widthAnchor.constraint(equalToConstant: 232).isActive = true
-        addArrangedSubview(rule)
-        addArrangedSubview(button)
+        if !title.isEmpty {
+            let label = NSTextField(labelWithString: title)
+            label.font = Tok.Font.section()
+            label.textColor = Tok.textPrimary
+            label.setAccessibilityRole(.staticText)
+            addArrangedSubview(label)
+        }
         addArrangedSubview(body)
-        updateChevron()
+        widthAnchor.constraint(equalToConstant: 264).isActive = true
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
-    @objc private func toggle() {
-        collapsed.toggle()
-        body.isHidden = collapsed
-        updateChevron()
+    private func updateCard() {
+        layer?.backgroundColor = Tok.resolve(Tok.cardBG, for: self)
+        layer?.borderColor = Tok.resolve(Tok.cardOutline, for: self)
     }
-
-    private func updateChevron() {
-        let img = NSImage(systemSymbolName: collapsed ? "chevron.right" : "chevron.down", accessibilityDescription: nil)
-        button.image = img?.withSymbolConfiguration(.init(pointSize: 8, weight: .bold))
-    }
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); updateCard() }
 }
 
 /// A labelled slider with a field beside it that shows the value and lets you type an exact one.
@@ -101,7 +93,7 @@ final class SliderRow: NSObject {
         row.spacing = 6
         row.alignment = .centerY
         // Full column width (panel 260 - 2 x 14 margin), so every slider ends at the same place whatever its section holds.
-        row.widthAnchor.constraint(equalToConstant: 232).isActive = true
+        row.widthAnchor.constraint(equalToConstant: 240).isActive = true
         super.init()
         field.target = self
         field.action = #selector(fieldCommitted)
@@ -156,7 +148,7 @@ final class AngleRow: NSObject {
         row.orientation = .horizontal
         row.spacing = 8
         row.alignment = .centerY
-        row.widthAnchor.constraint(equalToConstant: 232).isActive = true
+        row.widthAnchor.constraint(equalToConstant: 240).isActive = true
         super.init()
         dial.onChange = { [weak self] v in
             self?.field.stringValue = AngleRow.text(v)
@@ -227,6 +219,7 @@ final class InspectorView: NSView, NSTextFieldDelegate {
     private let scroll = NSScrollView()
     private let container = FlippedView()
     private let header = NSTextField(labelWithString: "")
+    private let topArea = NSView()
 
     // Sections (all live in one scrolling column)
     private var stylesSection: DisclosureSection!
@@ -235,6 +228,26 @@ final class InspectorView: NSView, NSTextFieldDelegate {
     private var lineSection: DisclosureSection!
     private var shadowSection: DisclosureSection!
     private var objectSection: DisclosureSection!
+    private var geometrySection: DisclosureSection!
+    private var arrangeSection: DisclosureSection!
+
+    // Header, tabs, geometry, hex fields, export
+    private let tabs = DesignSegmented(titles: ["Style", "Arrange", "Text"])
+    private var tabStacks: [NSStackView] = []
+    private let tile = SurfaceView(frame: .zero)
+    private let tileIcon = NSImageView()
+    private let nameField = DesignField()
+    private let typeLabel = NSTextField(labelWithString: "")
+    private var geometryFields: [GeoField] = []
+    private let fillHex = DesignField(), strokeHex = DesignField()
+    private let paletteButton = IconButton(symbol: "paintpalette", label: "Color presets", tip: "Color presets", size: 28, pointSize: 13)
+    private let presetsPopover = NSPopover()
+    private let moveToLayer = NSPopUpButton()
+    private var exportCard: DisclosureSection!
+    var selectedTab: Int { tabs.selected }
+    func selectTab(_ i: Int) { tabs.selected = i }
+    var headerTitle: String { nameField.stringValue }
+    var headerType: String { typeLabel.stringValue }
     private var textSection: DisclosureSection!
     private var connectorSection: DisclosureSection!
 
@@ -417,8 +430,30 @@ final class InspectorView: NSView, NSTextFieldDelegate {
         bindConnectorControls()
 
         // ----- Sections
-        fillColorRow = row("Color", fillColor)
-        gradientEditor.widthAnchor.constraint(equalToConstant: 232).isActive = true
+        configureHexField(fillHex) { [unowned self] c in
+            canvas?.applyStyle("Fill Color") { $0.fill.kind = $0.fill.kind == .none ? .solid : $0.fill.kind
+                if $0.fill.kind == .solid { $0.fill.color = RGBA(c.r, c.g, c.b, $0.fill.color.a) } }
+        }
+        configureHexField(strokeHex) { [unowned self] c in
+            canvas?.applyStyle("Line Color") { $0.stroke.color = RGBA(c.r, c.g, c.b, $0.stroke.color.a) }
+        }
+        paletteButton.target = self; paletteButton.action = #selector(showPresets(_:))
+        presetsPopover.behavior = .transient
+        let popContent = NSViewController()
+        let popHolder = NSView(frame: NSRect(x: 0, y: 0, width: 264, height: 100))
+        colorPresets.translatesAutoresizingMaskIntoConstraints = false
+        popHolder.addSubview(colorPresets)
+        NSLayoutConstraint.activate([
+            colorPresets.leadingAnchor.constraint(equalTo: popHolder.leadingAnchor, constant: 12), colorPresets.topAnchor.constraint(equalTo: popHolder.topAnchor, constant: 12),
+            popHolder.widthAnchor.constraint(equalToConstant: 264), popHolder.heightAnchor.constraint(equalToConstant: 100),
+        ])
+        popContent.view = popHolder
+        presetsPopover.contentViewController = popContent
+        let fillSwatchRow = NSStackView(views: [fillColor, fillHex, paletteButton])
+        fillSwatchRow.spacing = 8; fillSwatchRow.alignment = .centerY
+        fillHex.widthAnchor.constraint(equalToConstant: 96).isActive = true
+        fillColorRow = row("Color", fillSwatchRow)
+        gradientEditor.widthAnchor.constraint(equalToConstant: 240).isActive = true
         gradientEditor.heightAnchor.constraint(equalToConstant: 46).isActive = true
         gradientEditor.toolTip = "Click the bar to add a color stop. Drag a marker to move it (Shift = 5% steps). Delete removes the selected stop."
         for b in [removeStopBtn, reverseBtn] { b.bezelStyle = .texturedRounded; b.controlSize = .small }
@@ -427,19 +462,25 @@ final class InspectorView: NSView, NSTextFieldDelegate {
         stopButtons.spacing = 6
         gradientRows = [gradientEditor, stopColorRow, stopPosition.row, stopButtons]
 
-        colorPresets.widthAnchor.constraint(equalToConstant: 232).isActive = true
+        colorPresets.widthAnchor.constraint(equalToConstant: 240).isActive = true
         colorPresets.heightAnchor.constraint(equalToConstant: 76).isActive = true
-        stylePalette.widthAnchor.constraint(equalToConstant: 232).isActive = true
+        strokeColor.setContentHuggingPriority(.required, for: .horizontal)
+        stylePalette.widthAnchor.constraint(equalToConstant: 240).isActive = true
         stylePalette.library = library
         stylesSection = DisclosureSection("Styles", [stylePalette])
-        fillSection = DisclosureSection("Fill", [row("Type", fillKind), colorPresets, fillColorRow,
+        fillSection = DisclosureSection("Fill", [row("Type", fillKind), fillColorRow,
                                                  gradientEditor, stopColorRow, stopPosition.row, stopButtons, fillAngle.row, fillOpacity.row])
-        lineSection = DisclosureSection("Line", [strokeOn, row("Color", strokeColor), strokeWidth.row,
+        strokeHex.widthAnchor.constraint(equalToConstant: 96).isActive = true
+        let strokeSwatchRow = NSStackView(views: [strokeColor, strokeHex]); strokeSwatchRow.spacing = 8; strokeSwatchRow.alignment = .centerY
+        lineSection = DisclosureSection("Stroke", [strokeOn, row("Color", strokeSwatchRow), strokeWidth.row,
                                                  row("Pattern", dashPopup), row("Cap", capPopup), row("Corner", joinPopup)])
         // Only the checkbox is always there; the rest appear while the shadow is on.
         shadowDetailRows = [row("Color", shadowColor), shadowAngle.row, shadowBlur.row, shadowOffset.row]
-        shadowSection = DisclosureSection("Shadow", [shadowOn] + shadowDetailRows)
-        objectSection = DisclosureSection("Object", [opacity.row, radius.row, rotation.row])
+        shadowSection = DisclosureSection("Opacity & Shadow", [opacity.row, shadowOn] + shadowDetailRows)
+        buildGeometry()
+        objectSection = DisclosureSection("", [])                                 // (kept so older code paths find a hidden section)
+        objectSection.isHidden = true
+        buildArrange()
 
         let styleRow = NSStackView(views: [boldBtn, italicBtn, underlineBtn])
         styleRow.spacing = 6
@@ -454,18 +495,32 @@ final class InspectorView: NSView, NSTextFieldDelegate {
         connectorSection = DisclosureSection("Connector", [row("Type", routePopup), row("Start", startHead),
                                                            row("End", endHead), headSize.row, note])
 
-        let column = NSStackView(views: [header, stylesSection, fillSection, lineSection, shadowSection, objectSection,
-                                         textSection, connectorSection])
+        // The three tabs.
+        func stack(_ views: [NSView]) -> NSStackView {
+            let st = NSStackView(views: views)
+            st.orientation = .vertical; st.alignment = .leading; st.spacing = Tok.Space.cardGap
+            return st
+        }
+        tabStacks = [stack([geometrySection, stylesSection, fillSection, lineSection, shadowSection, connectorSection]), stack([arrangeSection]), stack([textSection])]
+        let column = NSStackView(views: tabStacks)
         column.orientation = .vertical
         column.alignment = .leading
-        column.spacing = 12
-        column.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 18, right: 14)
+        column.spacing = 0
+        column.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 12, right: 8)
         column.translatesAutoresizingMaskIntoConstraints = false
+        tabs.onChange = { [unowned self] i in showTab(i) }
+        showTab(0)
+        buildHeader()
+        buildExport()
 
         container.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(column)
+        addSubview(topArea)
+        addSubview(exportCard)
+        exportCard.translatesAutoresizingMaskIntoConstraints = false
         scroll.documentView = container
         scroll.hasVerticalScroller = true
+        scroll.scrollerStyle = .overlay
         scroll.drawsBackground = false
         scroll.translatesAutoresizingMaskIntoConstraints = false
 
@@ -476,19 +531,21 @@ final class InspectorView: NSView, NSTextFieldDelegate {
             column.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             column.bottomAnchor.constraint(equalTo: container.bottomAnchor),
 
-            scroll.topAnchor.constraint(equalTo: topAnchor),
+            topArea.topAnchor.constraint(equalTo: topAnchor), topArea.leadingAnchor.constraint(equalTo: leadingAnchor),
+            topArea.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: topArea.bottomAnchor),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
+            scroll.bottomAnchor.constraint(equalTo: exportCard.topAnchor, constant: -Tok.Space.cardGap),
             container.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
-
+            exportCard.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8), exportCard.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
         ])
     }
 
     /// Titles of the sections currently on screen (used by the self-test).
     var visibleSectionTitles: [String] {
-        [stylesSection, fillSection, lineSection, shadowSection, objectSection, textSection, connectorSection]
-            .compactMap { $0 }.filter { !$0.isHidden }.map(\.title)
+        [geometrySection, stylesSection, fillSection, lineSection, shadowSection, arrangeSection, textSection, connectorSection]
+            .compactMap { $0 }.filter { !$0.isHidden && !$0.title.isEmpty }.map(\.title)
     }
 
     /// The angle controls, exposed so tests can drive them like a user would.
@@ -508,6 +565,140 @@ final class InspectorView: NSView, NSTextFieldDelegate {
 
     /// Height the scrolling column wants (used by the layout self-check).
     var currentPaneHeight: CGFloat { container.fittingSize.height }
+
+    // MARK: Header, tabs, geometry, arrange, export
+
+    private func showTab(_ i: Int) {
+        for (n, st) in tabStacks.enumerated() { st.isHidden = n != i }
+    }
+
+    private func buildHeader() {
+        tile.fill = Tok.hoverFill; tile.outline = nil; tile.radius = 10
+        tile.translatesAutoresizingMaskIntoConstraints = false
+        tileIcon.translatesAutoresizingMaskIntoConstraints = false
+        tileIcon.contentTintColor = Tok.accent
+        tile.addSubview(tileIcon)
+        nameField.font = Tok.Font.title()
+        nameField.textColor = Tok.textPrimary
+        nameField.heightAnchor.constraint(equalToConstant: 26).isActive = true
+        nameField.widthAnchor.constraint(greaterThanOrEqualToConstant: 170).isActive = true
+        nameField.delegate = self
+        nameField.setAccessibilityLabel("Object name")
+        typeLabel.font = .systemFont(ofSize: 12); typeLabel.textColor = Tok.textSecondary
+        let names = NSStackView(views: [nameField, typeLabel])
+        names.orientation = .vertical; names.alignment = .leading; names.spacing = 1
+        let headerRow = NSStackView(views: [tile, names])
+        headerRow.orientation = .horizontal; headerRow.spacing = 11; headerRow.alignment = .centerY
+        headerRow.translatesAutoresizingMaskIntoConstraints = false
+        tabs.translatesAutoresizingMaskIntoConstraints = false
+        topArea.translatesAutoresizingMaskIntoConstraints = false
+        topArea.addSubview(tabs)
+        topArea.addSubview(headerRow)
+        NSLayoutConstraint.activate([
+            tabs.topAnchor.constraint(equalTo: topArea.topAnchor, constant: 12), tabs.leadingAnchor.constraint(equalTo: topArea.leadingAnchor, constant: 12),
+            tabs.trailingAnchor.constraint(equalTo: topArea.trailingAnchor, constant: -12),
+            headerRow.topAnchor.constraint(equalTo: tabs.bottomAnchor, constant: 12), headerRow.leadingAnchor.constraint(equalTo: topArea.leadingAnchor, constant: 16),
+            headerRow.trailingAnchor.constraint(equalTo: topArea.trailingAnchor, constant: -12), headerRow.bottomAnchor.constraint(equalTo: topArea.bottomAnchor, constant: -10),
+            tile.widthAnchor.constraint(equalToConstant: 36), tile.heightAnchor.constraint(equalToConstant: 36),
+            tileIcon.centerXAnchor.constraint(equalTo: tile.centerXAnchor), tileIcon.centerYAnchor.constraint(equalTo: tile.centerYAnchor),
+        ])
+    }
+
+    private func buildExport() {
+        func button(_ title: String, _ action: Selector) -> NSButton {
+            let b = NSButton(title: title, target: nil, action: action)
+            b.bezelStyle = .rounded; b.controlSize = .regular
+            b.setAccessibilityLabel("Export as \(title)")
+            b.toolTip = "Export as \(title)"
+            return b
+        }
+        let row = NSStackView(views: [button("PNG", #selector(DocumentWindowController.exportPNG(_:))), button("PDF", #selector(DocumentWindowController.exportPDF(_:))),
+                                      button("SVG", #selector(DocumentWindowController.exportSVG(_:)))])
+        row.distribution = .fillEqually
+        row.spacing = 8
+        row.widthAnchor.constraint(equalToConstant: 240).isActive = true
+        exportCard = DisclosureSection("Export", [row])
+    }
+
+    private func buildGeometry() {
+        func field(_ title: String, _ apply: @escaping ([Shape], Double) -> Void, _ read: @escaping (Shape) -> Double) -> GeoField {
+            let f = GeoField(title: title, apply: { [unowned self] v in
+                guard let canvas, !canvas.selectedShapes.isEmpty else { return }
+                apply(canvas.selectedShapes, v)
+            }, read: read)
+            f.field.delegate = self
+            geometryFields.append(f)
+            return f
+        }
+        func set(_ name: String, _ change: @escaping (inout Shape, Double) -> Void) -> ([Shape], Double) -> Void {
+            { [unowned self] _, v in canvas?.applyShapes(name) { change(&$0, v) } }
+        }
+        let x = field("X", set("Move") { $0.frame.origin.x = $1 }) { $0.frame.minX }
+        let y = field("Y", set("Move") { $0.frame.origin.y = $1 }) { $0.frame.minY }
+        let w = field("W", set("Resize") { $0.frame.size.width = max(12, $1) }) { $0.frame.width }
+        let h = field("H", set("Resize") { $0.frame.size.height = max(12, $1) }) { $0.frame.height }
+        let top = NSStackView(views: [x.view, y.view]); top.spacing = 8; top.distribution = .fillEqually
+        let bottom = NSStackView(views: [w.view, h.view]); bottom.spacing = 8; bottom.distribution = .fillEqually
+        for r in [top, bottom] { r.widthAnchor.constraint(equalToConstant: 240).isActive = true }
+        geometrySection = DisclosureSection("Geometry", [top, bottom, rotation.row, radius.row])
+    }
+
+    private func buildArrange() {
+        func segmentButton(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> IconButton {
+            let b = IconButton(symbol: symbol, label: label, tip: label, size: 36, pointSize: 14)
+            b.target = self
+            let a = Action { _ in action() }
+            actions.append(a)
+            b.target = a; b.action = #selector(Action.fire(_:))
+            return b
+        }
+        func align(_ tag: Int) -> () -> Void { { [unowned self] in let item = NSMenuItem(); item.tag = tag; canvas?.align(item) } }
+        let alignRow = NSStackView(views: [
+            segmentButton("align.horizontal.left", "Align left", align(0)), segmentButton("align.horizontal.center", "Align center", align(1)),
+            segmentButton("align.horizontal.right", "Align right", align(2)), segmentButton("align.vertical.top", "Align top", align(3)),
+            segmentButton("align.vertical.center", "Align middle", align(4)), segmentButton("align.vertical.bottom", "Align bottom", align(5)),
+        ])
+        alignRow.spacing = 0; alignRow.distribution = .fillEqually
+        alignRow.widthAnchor.constraint(equalToConstant: 240).isActive = true
+        let distribute: (Int) -> () -> Void = { tag in { [unowned self] in let item = NSMenuItem(); item.tag = tag; canvas?.distribute(item) } }
+        let match: (Int) -> () -> Void = { tag in { [unowned self] in let item = NSMenuItem(); item.tag = tag; canvas?.matchSize(item) } }
+        let spread = NSStackView(views: [segmentButton("distribute.horizontal.center", "Distribute horizontally", distribute(0)),
+                                         segmentButton("distribute.vertical.center", "Distribute vertically", distribute(1)),
+                                         segmentButton("arrow.left.and.right", "Same width", match(0)), segmentButton("arrow.up.and.down", "Same height", match(1)),
+                                         segmentButton("square.on.square", "Same size", match(2))])
+        spread.spacing = 0; spread.distribution = .fillEqually
+        spread.widthAnchor.constraint(equalToConstant: 240).isActive = true
+        let order = NSStackView(views: [segmentButton("square.3.layers.3d.top.filled", "Bring to front", { [unowned self] in canvas?.bringToFront(nil) }),
+                                        segmentButton("square.3.layers.3d.bottom.filled", "Send to back", { [unowned self] in canvas?.sendToBack(nil) })])
+        order.spacing = 6; order.distribution = .fillEqually
+        order.widthAnchor.constraint(equalToConstant: 240).isActive = true
+        moveToLayer.controlSize = .small
+        moveToLayer.widthAnchor.constraint(equalToConstant: InspectorView.popupWidth).isActive = true
+        moveToLayer.target = self; moveToLayer.action = #selector(moveToLayerPicked(_:))
+        moveToLayer.setAccessibilityLabel("Move to layer")
+        let alignTitle = NSTextField(labelWithString: "Align"), orderTitle = NSTextField(labelWithString: "Order")
+        for t in [alignTitle, orderTitle] { t.font = Tok.Font.label(); t.textColor = Tok.textSecondary }
+        arrangeSection = DisclosureSection("Arrange", [alignTitle, alignRow, spread, orderTitle, order, row("Move to layer", moveToLayer)])
+    }
+
+    @objc private func moveToLayerPicked(_ s: NSPopUpButton) {
+        guard let id = s.selectedItem?.representedObject as? UUID else { return }
+        canvas?.moveSelection(toLayer: id)
+    }
+
+    @objc private func showPresets(_ s: NSButton) { presetsPopover.show(relativeTo: s.bounds, of: s, preferredEdge: .maxY) }
+
+    /// A hex field ("#RRGGBB") that applies a color when it is committed.
+    private func configureHexField(_ field: DesignField, _ apply: @escaping (RGBA) -> Void) {
+        field.placeholderString = "#RRGGBB"
+        field.setAccessibilityLabel("Hex color")
+        let a = Action { sender in
+            let text = (sender as? NSTextField)?.stringValue ?? ""
+            if let c = RGBA(hex: text) { apply(c) }
+        }
+        actions.append(a)
+        field.target = a; field.action = #selector(Action.fire(_:))
+    }
 
     // MARK: Bindings
 
@@ -794,7 +985,6 @@ final class InspectorView: NSView, NSTextFieldDelegate {
         let isGradient = kind == .linear || kind == .radial
         fillColorRow.isHidden = kind != .solid
         fillOpacity.row.isHidden = kind == .none
-        colorPresets.isHidden = kind == .none
         if kind == .solid { colorPresets.selectedColor = st.fill.color }
         else if st.fill.stops.indices.contains(gradientEditor.selected) { colorPresets.selectedColor = st.fill.stops[gradientEditor.selected].color }
         else { colorPresets.selectedColor = nil }
@@ -804,18 +994,155 @@ final class InspectorView: NSView, NSTextFieldDelegate {
         radius.row.isHidden = onlyConnectors
         rotation.row.isHidden = shapes.isEmpty
 
+        // The header: what is selected.
+        var title: String, type: String, symbol: String
         switch (shapes.count, conns.count) {
-        case (0, 0): header.stringValue = "New objects"
-        case (let s, 0): header.stringValue = s == 1 ? "Shape" : "\(s) shapes"
-        case (0, let c): header.stringValue = c == 1 ? "Connector" : "\(c) connectors"
-        default: header.stringValue = "\(shapes.count + conns.count) objects"
+        case (0, 0): title = "New objects"; type = "Style for the next shape you draw"; symbol = "plus.square.dashed"
+        case (1, 0): title = shapes[0].displayName; type = shapes[0].kind.title; symbol = SidebarView.symbol(for: shapes[0].kind)
+        case (let n, 0):
+            title = "\(n) shapes"; symbol = "square.on.square"
+            let kinds = Set(shapes.map(\.kind))
+            type = kinds.count == 1 ? kinds.first!.title + "s" : "Mixed"
+        case (0, 1): title = conns[0].displayName; type = conns[0].route.title + " connector"; symbol = "arrow.up.right"
+        case (0, let c): title = "\(c) connectors"; type = "Connectors"; symbol = "arrow.up.right"
+        default: title = "\(shapes.count + conns.count) objects"; type = "Mixed"; symbol = "square.on.square"
         }
         // Locked objects keep their geometry, so rotation is unavailable when everything selected is locked.
         let everythingLocked = hasSelection && shapes.allSatisfy(\.locked) && conns.allSatisfy(\.locked)
-        if everythingLocked { header.stringValue += " (locked)" }
+        if everythingLocked { type += " · locked" }
+        if !nameField.isEditing { nameField.stringValue = title }
+        nameField.isEditable = shapes.count == 1 && conns.isEmpty
+        typeLabel.stringValue = type
+        tileIcon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 16, weight: .regular))
+        header.stringValue = title
+        for g in geometryFields { g.show(shapes) }
+        geometrySection.isHidden = shapes.isEmpty
+        arrangeSection.isHidden = !hasSelection
+        fillHex.stringValue = st.fill.kind == .solid ? st.fill.color.hex.replacingOccurrences(of: "#", with: "#").prefix(7).description : ""
+        strokeHex.stringValue = String(st.stroke.color.hex.prefix(7))
+        paletteButton.isHidden = kind == .none
+        if let layers = canvas.drawing.layers as [Layer]? {
+            let ids = layers.map(\.id)
+            if moveToLayer.itemArray.map({ $0.representedObject as? UUID }) != ids.reversed().map({ Optional($0) }) {
+                moveToLayer.removeAllItems()
+                for l in layers.reversed() { let it = NSMenuItem(title: l.name, action: nil, keyEquivalent: ""); it.representedObject = l.id; moveToLayer.menu?.addItem(it) }
+            }
+            if let i = moveToLayer.itemArray.firstIndex(where: { ($0.representedObject as? UUID) == canvas.activeLayerID }) { moveToLayer.selectItem(at: i) }
+        }
         rotation.setEnabled(!(shapes.allSatisfy(\.locked) && !shapes.isEmpty))
 
     }
 
     // MARK: Layers pane
+
+    // MARK: For tests
+
+    private func geo(_ title: String) -> GeoField? { geometryFields.first { $0.field.accessibilityLabel() == title } }
+    func setGeometry(_ title: String, to text: String) { geo(title)?.field.stringValue = text; geo(title)?.commit(); refresh() }
+    func nudgeGeometry(_ title: String, by v: Double) { geo(title)?.nudge(v); refresh() }
+    func geometryText(_ title: String) -> String { geo(title)?.field.stringValue ?? "?" }
+    func geometryPlaceholder(_ title: String) -> String { geo(title)?.field.placeholderString ?? "" }
+    func typeHex(fill text: String) { fillHex.stringValue = text; (fillHex.target as AnyObject).perform(fillHex.action, with: fillHex); refresh() }
+    func typeHex(stroke text: String) { strokeHex.stringValue = text; (strokeHex.target as AnyObject).perform(strokeHex.action, with: strokeHex); refresh() }
+    func rename(_ name: String) { nameField.stringValue = name; controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: nameField)) }
+    func pressArrange(_ label: String) {
+        func find(_ v: NSView) -> IconButton? { (v as? IconButton).flatMap { $0.accessibilityLabel() == label ? $0 : nil } ?? v.subviews.lazy.compactMap(find).first }
+        if let b = find(arrangeSection) { _ = b.target?.perform(b.action, with: b) }
+    }
+    func chooseLayer(_ name: String) {
+        if let i = moveToLayer.itemArray.firstIndex(where: { $0.title == name }) { moveToLayer.selectItem(at: i); moveToLayerPicked(moveToLayer) }
+    }
+    var exportButtonTitles: [String] {
+        func buttons(_ v: NSView) -> [NSButton] { (v as? NSButton).map { [$0] } ?? v.subviews.flatMap(buttons) }
+        return buttons(exportCard).map(\.title)
+    }
+    var exportFrame: CGRect { exportCard.frame }
+
+    // MARK: Name and geometry fields
+
+    func controlTextDidEndEditing(_ obj: Notification) {
+        guard let field = obj.object as? NSTextField, !updating else { return }
+        if field === nameField {
+            if let canvas, canvas.selectedShapes.count == 1, canvas.selectedConnectors.isEmpty, let id = canvas.selectedShapes.first?.id { canvas.renameObject(id, to: field.stringValue) }
+            refresh()
+        } else if let g = geometryFields.first(where: { $0.field === field }) {
+            g.commit()
+            refresh()
+        }
+    }
+
+    /// Up and down arrows nudge a number field by 1 (10 with Shift).
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        guard let g = geometryFields.first(where: { $0.field === control }) else { return false }
+        let step: Double = NSApp.currentEvent?.modifierFlags.contains(.shift) == true ? 10 : 1
+        if commandSelector == #selector(NSResponder.moveUp(_:)) { g.nudge(step); refresh(); return true }
+        if commandSelector == #selector(NSResponder.moveDown(_:)) { g.nudge(-step); refresh(); return true }
+        return false
+    }
+}
+
+/// A numeric field with a label that can be dragged to scrub the value.
+final class GeoField: NSObject {
+    let field = DesignField()
+    let view = NSStackView()
+    private let label = ScrubLabel()
+    private let apply: (Double) -> Void
+    private let read: (Shape) -> Double
+    private(set) var current: Double?
+    private(set) var isMixed = false
+
+    init(title: String, apply: @escaping (Double) -> Void, read: @escaping (Shape) -> Double) {
+        self.apply = apply; self.read = read
+        super.init()
+        label.stringValue = title
+        label.font = Tok.Font.label(); label.textColor = Tok.textSecondary
+        label.widthAnchor.constraint(equalToConstant: 14).isActive = true
+        label.toolTip = "Drag to change"
+        label.onScrub = { [weak self] delta in self?.scrub(by: delta) }
+        field.alignment = .left
+        field.font = Tok.Font.number()
+        field.setAccessibilityLabel(title)
+        field.target = self; field.action = #selector(committed(_:))
+        view.setViews([label, field], in: .leading)
+        view.orientation = .horizontal; view.spacing = 6; view.alignment = .centerY
+    }
+
+    /// Shows the shared value of `shapes`, or "Mixed".
+    func show(_ shapes: [Shape]) {
+        let values = shapes.map(read)
+        guard let first = values.first else { current = nil; isMixed = false; field.stringValue = ""; field.isEnabled = false; return }
+        field.isEnabled = true
+        if values.allSatisfy({ abs($0 - first) < 0.01 }) { current = first; isMixed = false; field.stringValue = GeoField.format(first) }
+        else { current = nil; isMixed = true; field.stringValue = ""; field.placeholderString = "Mixed" }
+    }
+
+    static func format(_ v: Double) -> String { v.rounded() == v ? String(Int(v)) : String(format: "%.1f", v) }
+
+    @objc private func committed(_ s: Any?) { commit() }
+    func commit() {
+        let text = field.stringValue.trimmingCharacters(in: .whitespaces)
+        guard let v = Double(text.replacingOccurrences(of: ",", with: ".")) else { return }
+        apply(v)
+    }
+    func nudge(_ by: Double) { apply((current ?? Double(field.stringValue) ?? 0) + by) }
+    private var scrubStart: Double = 0
+    private func scrub(by delta: Double) {
+        if delta == .infinity { scrubStart = current ?? Double(field.stringValue) ?? 0; return }
+        apply((scrubStart + delta).rounded())
+    }
+}
+
+/// A label whose horizontal drag reports a distance, to scrub the number next to it.
+final class ScrubLabel: NSTextField {
+    var onScrub: ((Double) -> Void)?
+    private var startX: CGFloat = 0
+    convenience init() { self.init(frame: .zero); isEditable = false; isBordered = false; drawsBackground = false }
+    override init(frame frameRect: NSRect) { super.init(frame: frameRect); isEditable = false; isBordered = false; drawsBackground = false; isSelectable = false }
+    required init?(coder: NSCoder) { fatalError("not used") }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .resizeLeftRight) }
+    override func mouseDown(with event: NSEvent) { startX = event.locationInWindow.x; onScrub?(.infinity) }
+    override func mouseDragged(with event: NSEvent) {
+        let scale: Double = event.modifierFlags.contains(.shift) ? 10 : 1
+        onScrub?(Double(event.locationInWindow.x - startX) / 2 * scale)
+    }
 }

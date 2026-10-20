@@ -96,8 +96,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             var d = ThemePreview.architectureSample()
             ThemeLibrary.theme(id: "soft-ui")?.apply(to: &d)
             wc.canvas.load(d)
-            wc.scroll.magnification = 2
+            if let arg = CommandLine.arguments.first(where: { $0.hasPrefix("--appearance=") }), let mode = UIAppearance(rawValue: String(arg.dropFirst(13))) { mode.apply() }
+            wc.scroll.magnification = CommandLine.arguments.contains("--fit") ? 0.5 : 2
             wc.canvas.scrollCenter(to: CGPoint(x: 300, y: 250))
+            if CommandLine.arguments.contains("--select"), let first = wc.canvas.drawing.shapes.first(where: { $0.kind != .text }) { wc.canvas.selection = [first.id] }
+            if CommandLine.arguments.contains("--multi") { wc.canvas.selection = Set(wc.canvas.drawing.shapes.filter { $0.kind != .text }.prefix(3).map(\.id)) }
+            if CommandLine.arguments.contains("--arrange") { wc.inspector.selectTab(1) }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 if let win = wc.window {
                     NSApp.activate(ignoringOtherApps: true); win.orderFrontRegardless()
@@ -1112,10 +1116,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             canvas2.selection = [a.id, link.id]; insp.refresh()
             let mixed = insp.visibleSectionTitles
 
-            return none == ["Styles", "Fill", "Line", "Shadow", "Object"]
-                && shape == ["Styles", "Fill", "Line", "Shadow", "Object", "Text"]
-                && conn == ["Styles", "Line", "Shadow", "Object", "Text", "Connector"]
-                && mixed == ["Styles", "Fill", "Line", "Shadow", "Object", "Text", "Connector"]
+            return none == ["Styles", "Fill", "Stroke", "Opacity & Shadow"]
+                && shape == ["Geometry", "Styles", "Fill", "Stroke", "Opacity & Shadow", "Arrange", "Text"]
+                && conn == ["Styles", "Stroke", "Opacity & Shadow", "Arrange", "Text", "Connector"]
+                && mixed == ["Geometry", "Styles", "Fill", "Stroke", "Opacity & Shadow", "Arrange", "Text", "Connector"]
         }))
         steps.append(("every choice in a style menu has its own distinct picture", {
             func distinct(_ images: [NSImage]) -> Bool {
@@ -1703,8 +1707,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             let found = popups(in: insp)
             let widths = found.map { $0.frame.width }
             let spread = (widths.max() ?? 0) - (widths.min() ?? 0)
-            if !(found.count == 8 && spread < 0.5) { print("      popup widths:", widths) }
-            return found.count == 8 && spread < 0.5
+            if !(found.count == 9 && spread < 0.5) { print("      popup widths:", widths) }
+            return found.count == 9 && spread < 0.5
         }))
         steps.append(("slider fields: typed values are clamped, scaled and sent through the slider's own action", {
             let catcher = ActionCatcher()

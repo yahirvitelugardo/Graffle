@@ -97,8 +97,27 @@ final class PillButton: NSButton {
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); updateAppearance() }
 }
 
+/// A text cell that keeps its text vertically centered (AppKit leaves it at the top of a tall field).
+final class CenteredTextFieldCell: NSTextFieldCell {
+    private func centered(_ rect: NSRect) -> NSRect {
+        var r = super.drawingRect(forBounds: rect)
+        let h = cellSize(forBounds: rect).height
+        if h < r.height { r.origin.y += (r.height - h) / 2; r.size.height = h }
+        r.origin.x += 9; r.size.width -= 18                                  // inset from the rounded edge
+        return r
+    }
+    override func drawingRect(forBounds rect: NSRect) -> NSRect { centered(rect) }
+    override func edit(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, event: NSEvent?) {
+        super.edit(withFrame: centered(rect), in: controlView, editor: textObj, delegate: delegate, event: event)
+    }
+    override func select(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, start selStart: Int, length selLength: Int) {
+        super.select(withFrame: centered(rect), in: controlView, editor: textObj, delegate: delegate, start: selStart, length: selLength)
+    }
+}
+
 /// A one-line text field that looks like the design's fields: tinted, rounded, with an accent ring when focused.
 final class DesignField: NSTextField {
+    override class var cellClass: AnyClass? { get { CenteredTextFieldCell.self } set {} }
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         isBordered = false
@@ -142,6 +161,7 @@ final class DesignField: NSTextField {
         layer.shadowRadius = 3; layer.shadowOffset = .zero
     }
 
+    var isEditing: Bool { currentEditor() != nil }
     // Inset the text a little from the rounded edge.
     override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 30) }
 }

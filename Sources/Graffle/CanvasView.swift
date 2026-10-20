@@ -89,6 +89,8 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
     }
 
     private var drag = Drag.none
+    /// Where, relative to the shape's own corner or edge point, a resize handle was grabbed.
+    private var resizeGrab = CGPoint.zero
     private var rubberRect: CGRect?
     private var connectPoint: CGPoint?
     private var connectTarget: UUID?
@@ -519,22 +521,21 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
             ctx.saveGState()
             ctx.concatenate(s.rotationTransform)
             ctx.setStrokeColor(accent.cgColor)
-            ctx.setLineWidth(1 / z)
+            ctx.setLineWidth(1.5 / z)
             if selection.count > 1 { ctx.setLineDash(phase: 0, lengths: [4 / z, 3 / z]) }
-            ctx.stroke(s.frame.insetBy(dx: -2 / z, dy: -2 / z))
+            ctx.addPath(selectionOutline(for: s))
+            ctx.strokePath()
             ctx.restoreGState()
         }
 
         if let b = groupBounds, !selectionHasLocked {          // a group with a locked member has no resize box
             ctx.setStrokeColor(accent.cgColor)
             ctx.setLineWidth(1 / z)
-            ctx.stroke(b.insetBy(dx: -4 / z, dy: -4 / z))
-            for r in handleRects(for: b.insetBy(dx: -4 / z, dy: -4 / z)) {
-                ctx.setFillColor(NSColor.white.cgColor)
-                ctx.fill(r)
-                ctx.setStrokeColor(accent.cgColor)
-                ctx.stroke(r)
-            }
+            ctx.setLineWidth(1.5 / z)
+            ctx.addPath(CGPath(roundedRect: b.insetBy(dx: -4 / z, dy: -4 / z), cornerWidth: 4 / z, cornerHeight: 4 / z, transform: nil))
+            ctx.strokePath()
+            drawHandles(handleRects(for: b.insetBy(dx: -4 / z, dy: -4 / z)), in: ctx)
+            drawSizeBadge(for: b.size, below: b.insetBy(dx: -4 / z, dy: -4 / z), in: ctx)
         }
 
         for s in selectedShapes where s.locked { drawLockBadge(on: s.worldBounds, in: ctx) }
@@ -568,14 +569,9 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
             ctx.strokePath()
             ctx.setFillColor(accent.cgColor)
             ctx.fillEllipse(in: knob)
-            for r in handleRects(for: s.frame) {
-                ctx.setFillColor(NSColor.white.cgColor)
-                ctx.fill(r)
-                ctx.setStrokeColor(accent.cgColor)
-                ctx.setLineWidth(1 / z)
-                ctx.stroke(r)
-            }
+            drawHandles(handleRects(for: selectionFrame(s.frame)), in: ctx)
             ctx.restoreGState()
+            drawSizeBadge(for: s.frame.size, below: s.worldBounds.insetBy(dx: -4 / z, dy: -4 / z), in: ctx)
         }
 
         if let r = rubberRect {
@@ -606,7 +602,7 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
     // MARK: Hit testing (topmost visible, unlocked layer first)
 
     private func handleRects(for f: CGRect) -> [CGRect] {
-        let s = 8 / max(zoom, 0.01)
+        let s = 10 / max(zoom, 0.01)
         let pts = [
             CGPoint(x: f.minX, y: f.minY), CGPoint(x: f.midX, y: f.minY), CGPoint(x: f.maxX, y: f.minY),
             CGPoint(x: f.maxX, y: f.midY), CGPoint(x: f.maxX, y: f.maxY), CGPoint(x: f.midX, y: f.maxY),
@@ -615,10 +611,64 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
         return pts.map { CGRect(x: $0.x - s / 2, y: $0.y - s / 2, width: s, height: s) }
     }
 
+    /// The selection's outline sits 4 points off the shape.
+    private func selectionFrame(_ f: CGRect) -> CGRect { f.insetBy(dx: -4 / max(zoom, 0.01), dy: -4 / max(zoom, 0.01)) }
+
+    /// The outline drawn around a shape: it follows the shape's own corner radius (or its ellipse).
+    private func selectionOutline(for s: Shape) -> CGPath {
+        let z = max(zoom, 0.01), f = selectionFrame(s.frame)
+        switch s.kind {
+        case .ellipse: return CGPath(ellipseIn: f, transform: nil)
+        case .rectangle, .rounded:
+            let r = min(CGFloat(s.style.cornerRadius) + 4 / z, f.width / 2, f.height / 2)
+            return CGPath(roundedRect: f, cornerWidth: r, cornerHeight: r, transform: nil)
+        default: return CGPath(roundedRect: f, cornerWidth: min(4 / z, f.width / 2, f.height / 2), cornerHeight: min(4 / z, f.width / 2, f.height / 2), transform: nil)
+        }
+    }
+
+    /// White round corner handles and pill edge handles, with a soft shadow.
+    private func drawHandles(_ rects: [CGRect], in ctx: CGContext) {
+        let z = max(zoom, 0.01)
+        for (i, r) in rects.enumerated() {
+            let c = CGPoint(x: r.midX, y: r.midY)
+            let box: CGRect
+            switch i {
+            case 0, 2, 4, 6: box = CGRect(x: c.x - 4.5 / z, y: c.y - 4.5 / z, width: 9 / z, height: 9 / z)
+            case 1, 5: box = CGRect(x: c.x - 10 / z, y: c.y - 2.5 / z, width: 20 / z, height: 5 / z)
+            default: box = CGRect(x: c.x - 2.5 / z, y: c.y - 10 / z, width: 5 / z, height: 20 / z)
+            }
+            let path = i % 2 == 0 ? CGPath(ellipseIn: box, transform: nil) : CGPath(roundedRect: box, cornerWidth: 2.5 / z, cornerHeight: 2.5 / z, transform: nil)
+            ctx.saveGState()
+            ctx.setShadow(offset: CGSize(width: 0, height: 1 / z), blur: 2 / z, color: NSColor(white: 0, alpha: 0.18).cgColor)
+            ctx.setFillColor(NSColor.white.cgColor)
+            ctx.addPath(path); ctx.fillPath()
+            ctx.restoreGState()
+            ctx.setStrokeColor(Tok.accent.cgColor)
+            ctx.setLineWidth(1.5 / z)
+            ctx.addPath(path); ctx.strokePath()
+        }
+    }
+
+    /// A pill under the selection with its size, e.g. "300 × 190".
+    private func drawSizeBadge(for size: CGSize, below rect: CGRect, in ctx: CGContext) {
+        let z = max(zoom, 0.01)
+        let text = "\(Int(size.width.rounded())) × \(Int(size.height.rounded()))"
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 11 / z, weight: .semibold), .foregroundColor: NSColor.white]
+        let str = NSAttributedString(string: text, attributes: attrs)
+        let sz = str.size()
+        let pill = CGRect(x: rect.midX - sz.width / 2 - 9 / z, y: rect.maxY + 12 / z, width: sz.width + 18 / z, height: sz.height + 8 / z)
+        ctx.saveGState()
+        ctx.setShadow(offset: CGSize(width: 0, height: 2 / z), blur: 6 / z, color: NSColor(srgbRed: 0, green: 0.31, blue: 0.67, alpha: 0.25).cgColor)
+        ctx.setFillColor(Tok.accent.cgColor)
+        ctx.addPath(CGPath(roundedRect: pill, cornerWidth: pill.height / 2, cornerHeight: pill.height / 2, transform: nil)); ctx.fillPath()
+        ctx.restoreGState()
+        str.draw(at: CGPoint(x: pill.minX + 9 / z, y: pill.minY + 4 / z))
+    }
+
     /// The round knob above the top edge that rotates the shape.
     private func rotateHandleRect(for f: CGRect) -> CGRect {
         let z = max(zoom, 0.01), r = 5 / z
-        return CGRect(x: f.midX - r, y: f.minY - 24 / z - r, width: r * 2, height: r * 2)
+        return CGRect(x: f.midX - r, y: f.minY - 28 / z - r, width: r * 2, height: r * 2)
     }
 
     /// 0...7 are the resize handles, 8 is the rotation knob. `p` is in canvas coordinates.
@@ -626,7 +676,7 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
         let lp = s.toLocal(p)
         let slop = 3 / max(zoom, 0.01)
         if rotateHandleRect(for: s.frame).insetBy(dx: -slop, dy: -slop).contains(lp) { return 8 }
-        return handleRects(for: s.frame).firstIndex { $0.insetBy(dx: -slop, dy: -slop).contains(lp) }
+        return handleRects(for: selectionFrame(s.frame)).firstIndex { $0.insetBy(dx: -slop, dy: -slop).contains(lp) }
     }
 
     private func hit(_ s: Shape, _ p: CGPoint) -> Bool {
@@ -752,9 +802,12 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
     /// Resizes `s` by dragging `handle` to canvas point `p`. The opposite edge stays put on screen even when rotated.
     private func resizedFrame(of s: Shape, handle h: Int, to p: CGPoint, gridSnap: Bool = true) -> CGRect {
         let f = s.frame
-        guard s.rotation != 0 else { return resized(f, handle: h, to: gridSnap ? snap(p) : p) }
+        // The edge follows the pointer from where the handle was grabbed (the handle sits 4 pt outside the shape).
+        let off = resizeGrab
+        guard s.rotation != 0 else { let q = CGPoint(x: p.x - off.x, y: p.y - off.y); return resized(f, handle: h, to: gridSnap ? snap(q) : q) }
 
-        let local = s.toLocal(p)
+        let l0 = s.toLocal(p)
+        let local = CGPoint(x: l0.x - off.x, y: l0.y - off.y)
         let nf = resized(f, handle: h, to: gridSnap ? snap(local) : local)
         func anchor(_ r: CGRect) -> CGPoint {
             CGPoint(x: [0, 6, 7].contains(h) ? r.maxX : ([2, 3, 4].contains(h) ? r.minX : r.midX),
@@ -804,6 +857,10 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
             return
         }
         if selection.count == 1, let s = selectedShapes.first, !s.locked, let h = handleIndex(at: p, for: s) {
+            if h != 8 {
+                let lp = s.toLocal(p), corner = handleRects(for: s.frame)[h]
+                resizeGrab = CGPoint(x: lp.x - corner.midX, y: lp.y - corner.midY)
+            }
             drag = h == 8 ? .rotate(id: s.id, before: drawing) : .resize(id: s.id, handle: h, before: drawing)
             return
         }
@@ -1168,6 +1225,13 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
     private func isEditing(connector id: UUID) -> Bool {
         if case .connector(let e)? = editTarget { return e == id }
         return false
+    }
+
+    /// Starts editing the text of the selected shape or connector (the contextual toolbar's "Edit text").
+    func editSelectedText() {
+        if selection.count == 1, let id = selection.first {
+            if shape(id) != nil { beginEditing(.shape(id)) } else if drawing.connectors.contains(where: { $0.id == id }) { beginEditing(.connector(id)) }
+        }
     }
 
     private func beginEditing(_ target: EditTarget) {

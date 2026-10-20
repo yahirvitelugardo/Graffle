@@ -186,6 +186,73 @@ extension AppDelegate {
             let hasHistory = wc.canvas.undoManager?.canUndo == true
             return hasHistory && wc.window?.toolbar?.items.first { $0.itemIdentifier.rawValue == "share" }?.view is PillButton
         }))
+        steps.append(("inspector: tabs Style / Arrange / Text show their own cards, and the header names the selection", {
+            ready(); load()
+            let insp = wc.inspector
+            wc.canvas.selection = []; insp.refresh()
+            let none = insp.headerTitle == "New objects" && insp.headerType.hasPrefix("Style for the next")
+            wc.canvas.selection = [a.id]; insp.refresh()
+            let one = insp.headerTitle == "Start" && insp.headerType == "Rounded rectangle"
+            wc.canvas.selection = [a.id, b.id]; insp.refresh()
+            let two = insp.headerTitle == "2 shapes" && insp.headerType == "Mixed"
+            wc.canvas.selection = [conn]; insp.refresh()
+            let connector = insp.headerType.hasSuffix("connector")
+            insp.selectTab(1); let arrange = insp.selectedTab == 1
+            insp.selectTab(2); let text = insp.selectedTab == 2
+            insp.selectTab(0)
+            wc.canvas.selection = []
+            return none && one && two && connector && arrange && text
+        }))
+        steps.append(("inspector: geometry fields move and resize, show Mixed for differing values, and nudge with arrows", {
+            ready(); load()
+            let insp = wc.inspector
+            wc.canvas.selection = [a.id]; insp.refresh()
+            insp.setGeometry("X", to: "250")
+            let moved = wc.canvas.drawing.shapes.first { $0.id == a.id }?.frame.minX == 250
+            insp.setGeometry("W", to: "200"); insp.setGeometry("H", to: "3")                       // heights are never below 12
+            let sized = wc.canvas.drawing.shapes.first { $0.id == a.id }?.frame.size == CGSize(width: 200, height: 12)
+            insp.nudgeGeometry("Y", by: 10)
+            let nudged = wc.canvas.drawing.shapes.first { $0.id == a.id }?.frame.minY == 110
+            wc.canvas.selection = [a.id, b.id]; insp.refresh()
+            let mixedX = insp.geometryText("X") == "" && insp.geometryPlaceholder("X") == "Mixed"
+            insp.setGeometry("Y", to: "400")
+            let both = wc.canvas.drawing.shapes.filter { $0.id == a.id || $0.id == b.id }.allSatisfy { $0.frame.minY == 400 }
+            wc.canvas.selection = [a.id]; insp.refresh()
+            let shown = insp.geometryText("Y") == "400" && insp.geometryText("W") == "200"
+            wc.canvas.undoManager?.undo()
+            return moved && sized && nudged && mixedX && both && shown
+        }))
+        steps.append(("inspector: hex fields set fill and stroke colors, and the name field renames the shape", {
+            ready(); load()
+            let insp = wc.inspector
+            wc.canvas.selection = [a.id]; insp.refresh()
+            insp.typeHex(fill: "#FF8800")
+            let fill = wc.canvas.drawing.shapes.first { $0.id == a.id }.map { abs($0.style.fill.color.r - 1) < 0.01 && abs($0.style.fill.color.g - 0.533) < 0.01 && $0.style.fill.color.b < 0.01 } ?? false
+            insp.typeHex(stroke: "#112233")
+            let stroke = wc.canvas.drawing.shapes.first { $0.id == a.id }.map { abs($0.style.stroke.color.b - 0.2) < 0.01 } ?? false
+            insp.typeHex(fill: "not a color")                                                      // ignored
+            let ignored = wc.canvas.drawing.shapes.first { $0.id == a.id }?.style.fill.color.r ?? 0 > 0.99
+            insp.rename("Entry")
+            let renamed = wc.canvas.drawing.shapes.first { $0.id == a.id }?.name == "Entry" && insp.headerTitle == "Entry"
+            return fill && stroke && ignored && renamed
+        }))
+        steps.append(("inspector: Arrange aligns, orders and moves to a layer, and Export is pinned at the bottom", {
+            ready(); load()
+            let insp = wc.inspector
+            wc.canvas.selection = [a.id, b.id]; insp.refresh()
+            insp.pressArrange("Align left")
+            let aligned = Set(wc.canvas.drawing.shapes.filter { $0.id == a.id || $0.id == b.id }.map(\.frame.minX)).count == 1
+            wc.canvas.selection = [a.id]; insp.refresh()
+            insp.pressArrange("Bring to front")
+            let front = wc.canvas.drawing.shapes.last?.id == a.id
+            insp.pressArrange("Send to back")
+            let back = wc.canvas.drawing.shapes.first?.id == a.id
+            insp.chooseLayer("Notes")
+            let layer = wc.canvas.drawing.shapes.first { $0.id == a.id }?.layer == l2
+            let export = insp.exportButtonTitles == ["PNG", "PDF", "SVG"]
+            let bottom = insp.convert(insp.exportFrame, to: nil).minY < insp.convert(insp.bounds, to: nil).minY + 80
+            return aligned && front && back && layer && export && bottom
+        }))
         return steps
     }
 }
