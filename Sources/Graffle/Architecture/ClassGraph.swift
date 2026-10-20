@@ -9,7 +9,7 @@ struct ClassOptions: Equatable {
     var maxTypes = 150
 }
 
-enum SourceLanguage: String {
+enum SourceLanguage: String, Codable {
     case swift, csharp, kotlin, java
 
     init?(pathExtension ext: String) {
@@ -23,7 +23,7 @@ enum SourceLanguage: String {
     }
 }
 
-enum TypeKind: String, CaseIterable {
+enum TypeKind: String, CaseIterable, Codable {
     case classType = "class", structType = "struct", enumType = "enum", protocolType = "protocol", interfaceType = "interface"
     case actorType = "actor", objectType = "object", recordType = "record"
 
@@ -31,7 +31,7 @@ enum TypeKind: String, CaseIterable {
     var title: String { rawValue.prefix(1).uppercased() + rawValue.dropFirst() }
 }
 
-struct TypeInfo: Equatable {
+struct TypeInfo: Equatable, Codable {
     var name: String
     var kind: TypeKind
     var language: SourceLanguage
@@ -44,7 +44,7 @@ struct TypeInfo: Equatable {
     var isAbstract = false
 }
 
-enum RelationKind: String {
+enum RelationKind: String, Codable {
     /// A class extends another.
     case inherits
     /// A type adopts a protocol or implements an interface.
@@ -55,7 +55,7 @@ enum RelationKind: String {
     var rank: Int { self == .association ? 0 : 1 }
 }
 
-struct TypeRelation: Hashable {
+struct TypeRelation: Hashable, Codable {
     var from: String
     var to: String
     var kind: RelationKind

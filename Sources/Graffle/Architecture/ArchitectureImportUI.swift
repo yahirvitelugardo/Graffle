@@ -58,6 +58,7 @@ extension AppDelegate {
                 switch outcome {
                 case .success(let graph):
                     var drawing = ArchitectureDrawing.build(graph)
+                    drawing.source = .architecture(ArchitectureModel(graph))
                     theme.apply(to: &drawing)
                     GraffleDocument.open(drawing: drawing, name: graph.title + " Architecture")
                 case .failure(let error):

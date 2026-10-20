@@ -1,20 +1,20 @@
 import Foundation
 
 /// What is read from a database: tables, their columns and the foreign keys between them.
-struct DBColumn: Equatable {
+struct DBColumn: Equatable, Codable {
     var name: String
     var type: String
     var isPrimaryKey = false
     var isNullable = true
 }
 
-struct DBForeignKey: Equatable {
+struct DBForeignKey: Equatable, Codable {
     var column: String
     var refTable: String          // a table's `id`, as in DBTable.id
     var refColumn: String
 }
 
-struct DBTable: Equatable, Identifiable {
+struct DBTable: Equatable, Identifiable, Codable {
     /// "schema.table", or just the table when it has no schema.
     var id: String
     var name: String
@@ -22,7 +22,7 @@ struct DBTable: Equatable, Identifiable {
     var foreignKeys: [DBForeignKey] = []
 }
 
-struct DBSchema: Equatable {
+struct DBSchema: Equatable, Codable {
     var tables: [DBTable] = []
     func table(_ id: String) -> DBTable? { tables.first { $0.id == id } }
 }

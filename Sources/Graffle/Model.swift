@@ -401,6 +401,8 @@ struct Drawing: Codable, Equatable {
     /// The theme this drawing uses, embedded so the file looks the same on a Mac that doesn't have the theme installed.
     /// It also styles new objects. Nil = the plain default look.
     var theme: ThemeDefinition? = nil
+    /// What the diagram was made from, so code can be generated from it later (nil for diagrams drawn by hand).
+    var source: DiagramSource? = nil
 
     func layer(_ id: UUID) -> Layer? { layers.first { $0.id == id } }
 

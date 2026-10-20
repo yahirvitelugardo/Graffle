@@ -178,6 +178,19 @@ enum Starters {
 
     // MARK: Entity-relationship
 
+    /// The example tables the diagram starts with, as a real schema (so code can be generated from them).
+    static let sampleSchema: DBSchema = {
+        func col(_ n: String, _ t: String, pk: Bool = false, null: Bool = false) -> DBColumn { DBColumn(name: n, type: t, isPrimaryKey: pk, isNullable: null) }
+        return DBSchema(tables: [
+            DBTable(id: "Customer", name: "Customer", columns: [col("id", "integer", pk: true), col("name", "varchar(120)"), col("email", "varchar(255)", null: true)]),
+            DBTable(id: "Order", name: "Order", columns: [col("id", "integer", pk: true), col("customer_id", "integer", null: true), col("ordered_at", "timestamp"), col("total", "decimal(10,2)")],
+                    foreignKeys: [DBForeignKey(column: "customer_id", refTable: "Customer", refColumn: "id")]),
+            DBTable(id: "OrderItem", name: "OrderItem", columns: [col("id", "integer", pk: true), col("order_id", "integer"), col("product_id", "integer", null: true), col("quantity", "integer")],
+                    foreignKeys: [DBForeignKey(column: "order_id", refTable: "Order", refColumn: "id"), DBForeignKey(column: "product_id", refTable: "Product", refColumn: "id")]),
+            DBTable(id: "Product", name: "Product", columns: [col("id", "integer", pk: true), col("name", "varchar(120)"), col("price", "decimal(10,2)")]),
+        ])
+    }()
+
     private static func entityRelationship() -> Drawing {
         var b = Builder()
         let salmon = RGBA(0.98, 0.72, 0.66), zebra = RGBA(0.90, 0.91, 0.93), line = RGBA(0.33, 0.37, 0.45)
@@ -195,6 +208,7 @@ enum Starters {
             }
             return box
         }
+        b.drawing.source = .entityRelationship(ERModel(title: "Shop", schema: sampleSchema, tableIDs: sampleSchema.tables.map(\.id)))
         let customer = table("Customer", ["id", "name", "email"], at: CGPoint(x: 80, y: 90))
         let order = table("Order", ["id", "customer_id", "ordered_at", "total"], at: CGPoint(x: 460, y: 90))
         let item = table("OrderItem", ["id", "order_id", "product_id", "quantity"], at: CGPoint(x: 460, y: 340))
@@ -302,6 +316,8 @@ enum Starters {
             TypeRelation(from: "Course", to: "Teacher", kind: .association),
             TypeRelation(from: "Course", to: "Student", kind: .association),
         ]
-        return ClassDrawing.build(g, options: ClassOptions(), decorations: false)
+        var d = ClassDrawing.build(g, options: ClassOptions(), decorations: false)
+        d.source = .classes(ClassModel(g))
+        return d
     }
 }

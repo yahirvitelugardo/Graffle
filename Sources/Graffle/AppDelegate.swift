@@ -13,7 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var snapshotter: SVGSnapshotter?
 
     private static let developerFlags: Set<String> = [
-        "--render-sample", "--render-about", "--import-to-png", "--architecture-to-png", "--render-chooser", "--render-navigator", "--classes-to-png", "--render-dbwizard", "--starter-to-png", "--svg-to-png", "--selftest", "--debug-window",
+        "--render-sample", "--render-about", "--import-to-png", "--architecture-to-png", "--render-chooser", "--render-navigator", "--classes-to-png", "--classes-to-code", "--render-dbwizard", "--starter-to-png", "--svg-to-png", "--selftest", "--debug-window",
     ]
     private var isDeveloperRun: Bool { !AppDelegate.developerFlags.isDisjoint(with: CommandLine.arguments) }
 
@@ -70,6 +70,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 w.connect { snap(out + ".2.png"); exit(0) }
             }
             return
+        }
+        if let i = CommandLine.arguments.firstIndex(of: "--classes-to-code"), i + 3 < CommandLine.arguments.count {
+            // Dev helper: read a project's types and generate code from them (swift|csharp|kotlin|java).
+            let a = CommandLine.arguments
+            do {
+                let g = try ClassImporter.analyze(URL(fileURLWithPath: a[i + 1]), options: ClassOptions())
+                let lang = SourceLanguage(rawValue: a[i + 2]) ?? .swift
+                let p = try ClassCode.generate(ClassModel(g), language: lang, project: "Generated")
+                try FolderWriter.write(p, to: URL(fileURLWithPath: a[i + 3]))
+                print("wrote", p.files.count, "files")
+            } catch { print("failed:", error.localizedDescription) }
+            exit(0)
         }
         if let i = CommandLine.arguments.firstIndex(of: "--classes-to-png"), i + 2 < CommandLine.arguments.count {
             // Dev helper: read a project's types and export the class diagram as PNG.
@@ -285,6 +297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             // Entity-relationship diagrams can be filled from a real database; cancelling keeps the example tables.
             if starter == .entityRelationship, let picked = DatabaseWizard.run() {
                 drawing = ERBuilder.build(picked.schema, tables: picked.tableIDs)
+                drawing.source = .entityRelationship(ERModel(title: picked.schema.tables.first?.name ?? "Database", schema: picked.schema, tableIDs: picked.tableIDs))
             }
             choice.theme.apply(to: &drawing)
             GraffleDocument.openNew(drawing: drawing)
@@ -360,6 +373,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item("Export as PNG…", #selector(DocumentWindowController.exportPNG(_:)), "e", [.command, .shift]),
             item("Export as PDF…", #selector(DocumentWindowController.exportPDF(_:)), "p", [.command, .shift]),
             item("Export as SVG…", #selector(DocumentWindowController.exportSVG(_:)), "e", [.command, .option]),
+            sep(),
+            item("Generate Code…", #selector(DocumentWindowController.generateCode(_:)), "g", [.command, .option, .shift]),
         ]))
 
         main.addItem(submenu("Edit", [
@@ -2684,6 +2699,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         steps.append(contentsOf: self.uiSteps())
         steps.append(contentsOf: self.windowSteps())
         steps.append(contentsOf: self.databaseSteps(tempDir: tempDir))
+        steps.append(contentsOf: self.codeGenSteps(tempDir: tempDir))
         steps.append(contentsOf: self.starterSteps(bundled: bundled))
         steps.append(contentsOf: self.themeSteps(cv: cv, drag: drag, bundled: bundled, tempDir: tempDir))
         var twoDocs: (a: GraffleDocument, b: GraffleDocument)?

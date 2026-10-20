@@ -7,7 +7,7 @@ struct ArchitectureOptions: Equatable {
     var includeExternalPackages = true
 }
 
-enum NodeKind: String, CaseIterable {
+enum NodeKind: String, CaseIterable, Codable {
     case app, appExtension, framework, library, tool, tests, externalPackage, system, other
 
     var title: String {
@@ -25,7 +25,7 @@ enum NodeKind: String, CaseIterable {
     }
 }
 
-enum EdgeKind: String {
+enum EdgeKind: String, Codable {
     /// A target depends on, or links, another.
     case dependsOn
     /// An app or framework embeds another product (frameworks, extensions).
@@ -43,7 +43,7 @@ enum EdgeKind: String {
     }
 }
 
-struct ArchitectureNode: Equatable {
+struct ArchitectureNode: Equatable, Codable {
     var id: String
     var name: String
     var kind: NodeKind
@@ -53,7 +53,7 @@ struct ArchitectureNode: Equatable {
     var container: String
 }
 
-struct ArchitectureEdge: Hashable {
+struct ArchitectureEdge: Hashable, Codable {
     var from: String
     var to: String
     var kind: EdgeKind

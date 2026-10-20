@@ -18,6 +18,10 @@ SOURCES=(
   Sources/Graffle/Model.swift
   Sources/Graffle/Render.swift
   Sources/Graffle/UI/Tokens.swift
+  Sources/Graffle/CodeGen/DiagramSource.swift
+  Sources/Graffle/Architecture/ArchitectureGraph.swift
+  Sources/Graffle/Architecture/ClassGraph.swift
+  Sources/Graffle/Database/DatabaseSchema.swift
   Sources/Graffle/Theme/RenderEffects.swift
   Sources/Graffle/Theme/ThemeDefinition.swift
   Sources/Graffle/Theme/ThemeApply.swift

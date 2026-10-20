@@ -58,6 +58,7 @@ extension AppDelegate {
                 switch outcome {
                 case .success(let graph):
                     var drawing = ClassDrawing.build(graph, options: options)
+                    drawing.source = .classes(ClassModel(graph))
                     theme.apply(to: &drawing)
                     GraffleDocument.open(drawing: drawing, name: graph.title + " Classes")
                 case .failure(let error):

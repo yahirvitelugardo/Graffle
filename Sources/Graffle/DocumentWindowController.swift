@@ -354,6 +354,9 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         case #selector(toggleGrid(_:)): menuItem.state = canvas.showGrid ? .on : .off
         case #selector(toggleSnap(_:)): menuItem.state = canvas.snapToGrid ? .on : .off
         case #selector(toggleNavigator(_:)): menuItem.title = NavigatorPrefs.isVisible ? "Hide Navigator" : "Show Navigator"
+        case #selector(generateCode(_:)):
+            menuItem.toolTip = canGenerateCode ? nil : "Only for Software Architecture, Classes and Entity-Relationship diagrams"
+            return canGenerateCode
         case #selector(zoomToSelection(_:)): return !canvas.selection.isEmpty
         case #selector(exportPNG(_:)), #selector(exportPDF(_:)), #selector(exportSVG(_:)): return canvas.exportBounds() != nil
         default: break
