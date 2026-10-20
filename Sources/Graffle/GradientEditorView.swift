@@ -71,7 +71,7 @@ final class GradientEditorView: NSView {
         // The color swatch inside the marker.
         s.color.ns.setFill()
         NSRect(x: cx - 4, y: top + 9, width: 8, height: 7).fill()
-        (selected ? NSColor.controlAccentColor : NSColor.secondaryLabelColor).setStroke()
+        (selected ? Tok.accent : NSColor.secondaryLabelColor).setStroke()
         p.lineWidth = selected ? 2 : 1
         p.stroke()
     }

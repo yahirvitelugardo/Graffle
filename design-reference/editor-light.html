@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Diagram editor — light</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#ECECEF}
+a{color:#0066CC}a:hover{color:#004C99}
+.cv{background-color:#FFFFFF;background-image:radial-gradient(#DCDCE2 1.1px,transparent 1.2px);background-size:20px 20px;background-position:10px 10px}
+.fld{background:#F2F2F5;border:1px solid transparent;border-radius:8px;color:#1D1D1F;font:500 12.5px/1 Inter,-apple-system,system-ui,sans-serif;font-variant-numeric:tabular-nums;height:30px;box-sizing:border-box;padding:0 9px;width:100%;min-width:0;outline:none;transition:background .15s,border-color .15s,box-shadow .15s}
+.fld:hover{background:#EBEBEF}.fld:focus{background:#FFFFFF;border-color:#0071E3;box-shadow:0 0 0 3px rgba(0,113,227,.18)}
+.ib{background:transparent;border:0;color:#515154;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:background .15s,color .15s}
+.ib:hover{background:rgba(0,0,0,.05);color:#1D1D1F}
+.row{transition:background .15s}.row:hover{background:rgba(0,0,0,.04)}
+.dk{transition:background .15s,color .15s,transform .15s}.dk:hover{transform:translateY(-1px)}
+input[type=range]{accent-color:#0071E3}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-direction: column; font-family: Inter, -apple-system, system-ui, sans-serif; color: #1D1D1F; background: #ECECEF; font-size: 13px; letter-spacing: -0.005em">
+
+<header style="min-height: 52px; flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px">
+  <div style="display: flex; align-items: center; gap: 16px; min-width: 0">
+    <div aria-hidden="true" style="display: flex; gap: 8px">
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #FF5F57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,.12)"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #FEBC2E; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,.12)"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #28C840; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,.12)"></span>
+    </div>
+    <button type="button" class="ib" aria-label="Toggle sidebar" style="width: 30px; height: 30px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v14H4z M9.5 5v14"></path></svg></button>
+    <div style="display: flex; flex-direction: column; gap: 1px">
+      <button type="button" class="ib" style="height: 22px; padding: 0 4px; margin-left: -4px; gap: 4px; justify-content: flex-start; color: #1D1D1F; font: 600 14px Inter, -apple-system, system-ui, sans-serif; letter-spacing: -0.01em">Untitled<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
+      <span style="font-size: 11.5px; color: #6E6E73">Page 1</span>
+    </div>
+  </div>
+
+  <div style="display: flex; align-items: center; gap: 8px">
+    <div style="display: flex; align-items: center; gap: 2px">
+      <button type="button" class="ib" aria-label="Undo" title="Undo (⌘Z)" style="width: 32px; height: 32px"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5 M4 9h10a6 6 0 0 1 0 12h-3"></path></svg></button>
+      <button type="button" class="ib" aria-label="Redo" title="Redo (⇧⌘Z)" style="width: 32px; height: 32px"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14l5-5-5-5 M20 9H10a6 6 0 0 0 0 12h3"></path></svg></button>
+    </div>
+    <button type="button" class="ib" aria-label="Export" title="Export" style="width: 32px; height: 32px"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3 M7 8l5-5 5 5 M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"></path></svg></button>
+    <button type="button" style="height: 32px; padding: 0 16px; border-radius: 999px; border: 0; background: #0071E3; color: #FFFFFF; font: 600 13px Inter, -apple-system, system-ui, sans-serif; cursor: pointer; box-shadow: 0 1px 2px rgba(0,60,140,.25), inset 0 1px 0 rgba(255,255,255,.18)">Share</button>
+  </div>
+</header>
+
+<div style="flex: 1 0 auto; display: flex; flex-wrap: wrap; gap: 10px; padding: 0 10px 10px; min-height: calc(100vh - 62px); box-sizing: border-box">
+
+  <aside aria-label="Pages and layers" style="flex: 1 1 236px; display: flex; flex-direction: column; min-width: 0; background: rgba(255,255,255,.72); border-radius: 14px; box-shadow: 0 0 0 0.5px rgba(0,0,0,.08), 0 1px 3px rgba(0,0,0,.04)">
+    <div style="padding: 12px 12px 6px">
+      <label style="display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 9px; border-radius: 8px; background: rgba(0,0,0,.05); color: #6E6E73">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M10.5 4a6.5 6.5 0 1 0 0 13a6.5 6.5 0 1 0 0-13z M15.5 15.5L20 20"></path></svg>
+        <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search layers</span>
+        <input type="search" placeholder="Search" style="flex: 1; min-width: 0; border: 0; background: transparent; outline: none; font: 400 13px Inter, -apple-system, system-ui, sans-serif; color: #1D1D1F">
+      </label>
+    </div>
+
+    <div style="padding: 10px 16px 4px; display: flex; align-items: center; justify-content: space-between">
+      <h2 style="margin: 0; font-size: 11.5px; font-weight: 600; color: #6E6E73">Pages</h2>
+      <button type="button" class="ib" aria-label="Add page" style="width: 22px; height: 22px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14 M5 12h14"></path></svg></button>
+    </div>
+    <div style="display: flex; flex-direction: column; padding: 2px 8px 8px">
+      <button type="button" class="row" style="display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 8px; border: 0; border-radius: 7px; background: rgba(0,0,0,.05); color: #1D1D1F; font: 500 13px Inter, -apple-system, system-ui, sans-serif; text-align: left; cursor: pointer">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0071E3" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z M14 3v4h4"></path></svg>Page 1
+      </button>
+    </div>
+
+    <div style="padding: 10px 16px 4px; display: flex; align-items: center; justify-content: space-between">
+      <h2 style="margin: 0; font-size: 11.5px; font-weight: 600; color: #6E6E73">Layers</h2>
+      <button type="button" class="ib" aria-label="Add layer" style="width: 22px; height: 22px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14 M5 12h14"></path></svg></button>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 1px; padding: 2px 8px">
+      <div class="row" style="display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 6px 0 4px; border-radius: 7px">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#6E6E73" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#515154" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5z M3 13l9 5 9-5"></path></svg>
+        <span style="flex: 1; font-weight: 500">Layer 1</span>
+        <button type="button" class="ib" aria-label="Hide Layer 1" style="width: 24px; height: 24px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z"></path></svg></button>
+        <button type="button" class="ib" aria-label="Lock Layer 1" style="width: 24px; height: 24px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 11h12v9H6z M9 11V8a3 3 0 0 1 6 0"></path></svg></button>
+      </div>
+      <button type="button" class="row" style="display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 8px 0 30px; border: 0; border-radius: 7px; background: transparent; color: #1D1D1F; font: 400 13px Inter, -apple-system, system-ui, sans-serif; text-align: left; cursor: pointer">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6E6E73" stroke-width="1.7" aria-hidden="true"><path d="M12 5a8 7 0 1 0 0 14a8 7 0 1 0 0-14z"></path></svg>Start
+      </button>
+      <button type="button" class="row" style="display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 8px 0 30px; border: 0; border-radius: 7px; background: transparent; color: #1D1D1F; font: 400 13px Inter, -apple-system, system-ui, sans-serif; text-align: left; cursor: pointer">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6E6E73" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M19 5C12 5 12 19 5 19 M5 15v4h4"></path></svg>Connector
+      </button>
+      <button type="button" aria-current="true" style="display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 8px 0 30px; border: 0; border-radius: 7px; background: #0071E3; color: #FFFFFF; font: 500 13px Inter, -apple-system, system-ui, sans-serif; text-align: left; cursor: pointer">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M7 5h10a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3z"></path></svg>Process
+      </button>
+    </div>
+    <div style="flex: 1"></div>
+    <div style="margin: 8px; padding: 10px 10px; border-radius: 10px; background: rgba(0,0,0,.035); display: flex; align-items: center; justify-content: space-between; color: #6E6E73; font-size: 12px; font-variant-numeric: tabular-nums">
+      <span>3 objects</span>
+      <span>1 selected</span>
+    </div>
+  </aside>
+
+  <main aria-label="Canvas" class="cv" style="flex: 999 1 560px; min-width: 0; min-height: 640px; position: relative; overflow: hidden; border-radius: 14px; box-shadow: 0 0 0 0.5px rgba(0,0,0,.08), 0 2px 8px rgba(0,0,0,.04)">
+
+    <div style="position: absolute; left: 150px; top: 262px; width: 116px; height: 124px; box-sizing: border-box; border-radius: 50%; background: #EEF4FF; border: 1.5px solid #7FA7E8; box-shadow: 0 1px 2px rgba(16,40,90,.06), 0 6px 16px rgba(16,40,90,.06); display: flex; align-items: center; justify-content: center; color: #1D1D1F; font-weight: 500; font-size: 14px">Start</div>
+
+    <svg aria-hidden="true" width="120" height="60" viewBox="0 0 120 60" style="position: absolute; left: 262px; top: 296px; overflow: visible">
+      <path d="M100 48 C 60 48, 50 28, 12 28" stroke="#8E8E93" stroke-width="1.6" fill="none" stroke-linecap="round"></path>
+      <path d="M5 28 L14 23.5 L14 32.5 Z" fill="#8E8E93"></path>
+      <circle cx="100" cy="48" r="4.5" fill="#FFFFFF" stroke="#0071E3" stroke-width="1.6"></circle>
+    </svg>
+
+    <div style="position: absolute; left: 380px; top: 206px; display: flex; align-items: center; gap: 2px; padding: 4px; background: rgba(255,255,255,.92); border-radius: 12px; box-shadow: 0 0 0 0.5px rgba(0,0,0,.1), 0 8px 24px rgba(0,0,0,.1), 0 2px 6px rgba(0,0,0,.05)">
+      <button type="button" class="ib" aria-label="Fill color" style="width: 30px; height: 30px"><span style="width: 16px; height: 16px; border-radius: 50%; background: #EEF4FF; box-shadow: inset 0 0 0 1px rgba(0,0,0,.18)"></span></button>
+      <button type="button" class="ib" aria-label="Stroke color" style="width: 30px; height: 30px"><span style="width: 16px; height: 16px; border-radius: 50%; border: 3px solid #7FA7E8; box-sizing: border-box"></span></button>
+      <div aria-hidden="true" style="width: 1px; height: 18px; background: rgba(0,0,0,.1); margin: 0 3px"></div>
+      <button type="button" class="ib" aria-label="Edit text" style="width: 30px; height: 30px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M5 6V5h14v1 M12 5v14 M9 19h6"></path></svg></button>
+      <button type="button" class="ib" aria-label="Add connector" style="width: 30px; height: 30px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 5C12 5 12 19 5 19 M15 5h4v4"></path></svg></button>
+      <button type="button" class="ib" aria-label="Duplicate" style="width: 30px; height: 30px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M9 9h11v11H9z M5 15V4h11"></path></svg></button>
+      <button type="button" class="ib" aria-label="More actions" style="width: 30px; height: 30px"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="19" cy="12" r="1.6"></circle></svg></button>
+    </div>
+
+    <div style="position: absolute; left: 362px; top: 262px; width: 300px; height: 190px; box-sizing: border-box; border-radius: 16px; background: #EEF4FF; border: 1.5px solid #7FA7E8; box-shadow: 0 1px 2px rgba(16,40,90,.06), 0 10px 28px rgba(16,40,90,.08); display: flex; align-items: center; justify-content: center; color: #1D1D1F; font-weight: 500; font-size: 14px">Process</div>
+
+    <div aria-hidden="true" style="position: absolute; left: 358px; top: 258px; width: 308px; height: 198px; box-sizing: border-box; border: 1.5px solid #0071E3; border-radius: 19px; pointer-events: none">
+      <span style="position: absolute; left: -6px; top: -6px; width: 9px; height: 9px; border-radius: 50%; background: #FFFFFF; border: 1.5px solid #0071E3; box-shadow: 0 1px 2px rgba(0,0,0,.15)"></span>
+      <span style="position: absolute; right: -6px; top: -6px; width: 9px; height: 9px; border-radius: 50%; background: #FFFFFF; border: 1.5px solid #0071E3; box-shadow: 0 1px 2px rgba(0,0,0,.15)"></span>
+      <span style="position: absolute; right: -6px; bottom: -6px; width: 9px; height: 9px; border-radius: 50%; background: #FFFFFF; border: 1.5px solid #0071E3; box-shadow: 0 1px 2px rgba(0,0,0,.15)"></span>
+      <span style="position: absolute; left: -6px; bottom: -6px; width: 9px; height: 9px; border-radius: 50%; background: #FFFFFF; border: 1.5px solid #0071E3; box-shadow: 0 1px 2px rgba(0,0,0,.15)"></span>
+      <span style="position: absolute; left: calc(50% - 10px); top: -4px; width: 20px; height: 5px; border-radius: 3px; background: #FFFFFF; border: 1.5px solid #0071E3"></span>
+      <span style="position: absolute; left: calc(50% - 10px); bottom: -4px; width: 20px; height: 5px; border-radius: 3px; background: #FFFFFF; border: 1.5px solid #0071E3"></span>
+      <span style="position: absolute; left: -4px; top: calc(50% - 10px); width: 5px; height: 20px; border-radius: 3px; background: #FFFFFF; border: 1.5px solid #0071E3"></span>
+      <span style="position: absolute; right: -4px; top: calc(50% - 10px); width: 5px; height: 20px; border-radius: 3px; background: #FFFFFF; border: 1.5px solid #0071E3"></span>
+      <span style="position: absolute; left: 50%; top: 210px; transform: translateX(-50%); padding: 4px 9px; border-radius: 999px; background: #0071E3; color: #FFFFFF; font: 600 11px Inter, -apple-system, system-ui, sans-serif; font-variant-numeric: tabular-nums; white-space: nowrap; box-shadow: 0 2px 6px rgba(0,80,170,.25)">300 × 190</span>
+    </div>
+
+    <div aria-hidden="true" style="position: absolute; left: 120px; right: 140px; top: 324px; height: 0; border-top: 1px solid rgba(255,59,48,.55)"></div>
+    <span aria-hidden="true" style="position: absolute; left: 204px; top: 320px; width: 9px; height: 9px; transform: rotate(45deg); border-right: 1px solid rgba(255,59,48,.7); border-bottom: 1px solid rgba(255,59,48,.7); display: none"></span>
+
+    <nav aria-label="Tools" style="position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; padding: 6px; background: rgba(255,255,255,.88); border-radius: 18px; box-shadow: 0 0 0 0.5px rgba(0,0,0,.1), 0 12px 32px rgba(0,0,0,.12), 0 2px 6px rgba(0,0,0,.06); white-space: nowrap">
+      <sc-for list="{{toolsA}}" as="t" hint-placeholder-count="2">
+        <button type="button" class="ib dk" aria-label="{{t.label}}" aria-pressed="{{t.pressed}}" title="{{t.title}}" onClick="{{t.pick}}" style="{{t.style}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{t.d}}"></path></svg></button>
+      </sc-for>
+      <div aria-hidden="true" style="width: 1px; height: 24px; background: rgba(0,0,0,.1); margin: 0 4px"></div>
+      <sc-for list="{{toolsB}}" as="t" hint-placeholder-count="5">
+        <button type="button" class="ib dk" aria-label="{{t.label}}" aria-pressed="{{t.pressed}}" title="{{t.title}}" onClick="{{t.pick}}" style="{{t.style}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{t.d}}"></path></svg></button>
+      </sc-for>
+      <div aria-hidden="true" style="width: 1px; height: 24px; background: rgba(0,0,0,.1); margin: 0 4px"></div>
+      <sc-for list="{{toolsC}}" as="t" hint-placeholder-count="3">
+        <button type="button" class="ib dk" aria-label="{{t.label}}" aria-pressed="{{t.pressed}}" title="{{t.title}}" onClick="{{t.pick}}" style="{{t.style}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{t.d}}"></path></svg></button>
+      </sc-for>
+    </nav>
+
+    <div style="position: absolute; right: 16px; bottom: 20px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px">
+      <div role="img" aria-label="Navigator" style="position: relative; width: 168px; height: 104px; border-radius: 12px; background: rgba(255,255,255,.9); box-shadow: 0 0 0 0.5px rgba(0,0,0,.1), 0 6px 18px rgba(0,0,0,.08); overflow: hidden">
+        <span style="position: absolute; left: 30px; top: 40px; width: 14px; height: 15px; border-radius: 50%; border: 1px solid #7FA7E8; background: #EEF4FF"></span>
+        <span style="position: absolute; left: 56px; top: 41px; width: 37px; height: 23px; border-radius: 4px; border: 1px solid #0071E3; background: #EEF4FF"></span>
+        <span style="position: absolute; left: 10px; top: 10px; width: 120px; height: 82px; border-radius: 6px; background: rgba(0,113,227,.06); box-shadow: inset 0 0 0 1.5px rgba(0,113,227,.7)"></span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 0; padding: 3px; background: rgba(255,255,255,.9); border-radius: 999px; box-shadow: 0 0 0 0.5px rgba(0,0,0,.1), 0 6px 18px rgba(0,0,0,.08)">
+        <button type="button" class="ib" aria-label="Zoom out" onClick="{{zoomOut}}" style="width: 30px; height: 30px; border-radius: 999px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"></path></svg></button>
+        <button type="button" class="ib" onClick="{{zoomFit}}" title="Zoom to fit" style="min-width: 52px; height: 30px; border-radius: 999px; color: #1D1D1F; font: 600 12px Inter, -apple-system, system-ui, sans-serif; font-variant-numeric: tabular-nums">{{zoomLabel}}</button>
+        <button type="button" class="ib" aria-label="Zoom in" onClick="{{zoomIn}}" style="width: 30px; height: 30px; border-radius: 999px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14 M5 12h14"></path></svg></button>
+      </div>
+    </div>
+  </main>
+
+  <aside aria-label="Inspector" style="flex: 1 1 280px; display: flex; flex-direction: column; min-width: 0; background: rgba(255,255,255,.72); border-radius: 14px; box-shadow: 0 0 0 0.5px rgba(0,0,0,.08), 0 1px 3px rgba(0,0,0,.04)">
+    <div style="padding: 12px">
+      <div role="tablist" aria-label="Inspector sections" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; padding: 2px; background: rgba(0,0,0,.06); border-radius: 9px">
+        <sc-for list="{{tabs}}" as="tab" hint-placeholder-count="3">
+          <button type="button" role="tab" aria-selected="{{tab.selected}}" onClick="{{tab.pick}}" style="{{tab.style}}">{{tab.label}}</button>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="padding: 2px 16px 14px; display: flex; align-items: center; gap: 11px">
+      <div aria-hidden="true" style="width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(180deg, #EEF4FF, #DCE8FF); box-shadow: inset 0 0 0 0.5px rgba(0,80,170,.2); display: flex; align-items: center; justify-content: center; color: #0066CC">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M7 5h10a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3z"></path></svg>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 1px; min-width: 0">
+        <span style="font-weight: 600; font-size: 14px; letter-spacing: -0.01em">Process</span>
+        <span style="font-size: 12px; color: #6E6E73">Rounded rectangle</span>
+      </div>
+    </div>
+
+    <sc-if value="{{showDesign}}" hint-placeholder-val="{{ true }}">
+    <div style="display: flex; flex-direction: column; gap: 10px; padding: 0 10px">
+      <section style="background: #FFFFFF; border-radius: 12px; padding: 12px; box-shadow: 0 0 0 0.5px rgba(0,0,0,.06)">
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+          <label style="display: flex; align-items: center; gap: 7px; color: #6E6E73; font-size: 11.5px; font-weight: 500"><span style="width: 12px">X</span><input class="fld" type="text" defaultValue="362"></label>
+          <label style="display: flex; align-items: center; gap: 7px; color: #6E6E73; font-size: 11.5px; font-weight: 500"><span style="width: 12px">Y</span><input class="fld" type="text" defaultValue="262"></label>
+          <label style="display: flex; align-items: center; gap: 7px; color: #6E6E73; font-size: 11.5px; font-weight: 500"><span style="width: 12px">W</span><input class="fld" type="text" defaultValue="300"></label>
+          <label style="display: flex; align-items: center; gap: 7px; color: #6E6E73; font-size: 11.5px; font-weight: 500"><span style="width: 12px">H</span><input class="fld" type="text" defaultValue="190"></label>
+          <label style="display: flex; align-items: center; gap: 7px; color: #6E6E73; font-size: 11.5px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" role="img" aria-label="Rotation"><path d="M20 12a8 8 0 1 1-3-6.2 M20 4v5h-5"></path></svg><input class="fld" type="text" defaultValue="0°"></label>
+          <label style="display: flex; align-items: center; gap: 7px; color: #6E6E73; font-size: 11.5px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" role="img" aria-label="Corner radius"><path d="M4 20V11a7 7 0 0 1 7-7h9"></path></svg><input class="fld" type="text" defaultValue="16"></label>
+        </div>
+      </section>
+
+      <section style="background: #FFFFFF; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 0 0 0.5px rgba(0,0,0,.06)">
+        <h3 style="margin: 0; font-size: 12.5px; font-weight: 600">Style</h3>
+        <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px">
+          <sc-for list="{{presets}}" as="p" hint-placeholder-count="6">
+            <button type="button" aria-label="{{p.label}}" aria-pressed="{{p.pressed}}" title="{{p.label}}" onClick="{{p.pick}}" style="{{p.ring}}"><span style="{{p.chip}}"></span></button>
+          </sc-for>
+        </div>
+      </section>
+
+      <section style="background: #FFFFFF; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 0 0 0.5px rgba(0,0,0,.06)">
+        <h3 style="margin: 0; font-size: 12.5px; font-weight: 600">Fill</h3>
+        <div style="display: flex; align-items: center; gap: 6px">
+          <button type="button" aria-label="Pick fill color" style="flex: 0 0 auto; width: 30px; height: 30px; border-radius: 8px; border: 0; background: #EEF4FF; box-shadow: inset 0 0 0 1px rgba(0,0,0,.14); cursor: pointer"></button>
+          <label style="flex: 1; min-width: 0"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Fill hex</span><input class="fld" type="text" defaultValue="EEF4FF"></label>
+          <label style="flex: 0 0 62px"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Fill opacity</span><input class="fld" type="text" defaultValue="100%"></label>
+        </div>
+        <div style="height: 1px; background: rgba(0,0,0,.06)"></div>
+        <h3 style="margin: 0; font-size: 12.5px; font-weight: 600">Stroke</h3>
+        <div style="display: flex; align-items: center; gap: 6px">
+          <button type="button" aria-label="Pick stroke color" style="flex: 0 0 auto; width: 30px; height: 30px; border-radius: 8px; border: 0; background: #7FA7E8; box-shadow: inset 0 0 0 1px rgba(0,0,0,.14); cursor: pointer"></button>
+          <label style="flex: 1; min-width: 0"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Stroke hex</span><input class="fld" type="text" defaultValue="7FA7E8"></label>
+          <label style="flex: 0 0 62px"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Stroke width</span><input class="fld" type="text" defaultValue="1.5 pt"></label>
+        </div>
+        <div role="group" aria-label="Line pattern" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; padding: 2px; background: rgba(0,0,0,.06); border-radius: 8px">
+          <button type="button" aria-label="Solid" aria-pressed="true" style="height: 26px; border: 0; border-radius: 6px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,0,0,.12); cursor: pointer; display: flex; align-items: center; justify-content: center"><span style="width: 22px; height: 0; border-top: 2px solid #1D1D1F"></span></button>
+          <button type="button" aria-label="Dashed" aria-pressed="false" style="height: 26px; border: 0; border-radius: 6px; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center"><span style="width: 22px; height: 0; border-top: 2px dashed #515154"></span></button>
+          <button type="button" aria-label="Dotted" aria-pressed="false" style="height: 26px; border: 0; border-radius: 6px; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center"><span style="width: 22px; height: 0; border-top: 2px dotted #515154"></span></button>
+        </div>
+      </section>
+
+      <section style="background: #FFFFFF; border-radius: 12px; box-shadow: 0 0 0 0.5px rgba(0,0,0,.06)">
+        <div style="padding: 12px; display: flex; flex-direction: column; gap: 8px">
+          <div style="display: flex; align-items: center; justify-content: space-between">
+            <h3 style="margin: 0; font-size: 12.5px; font-weight: 600">Opacity</h3>
+            <span style="font-size: 12px; font-weight: 500; color: #515154; font-variant-numeric: tabular-nums">100%</span>
+          </div>
+          <label style="display: block"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Object opacity</span><input type="range" min="0" max="100" defaultValue="100" style="width: 100%; margin: 0"></label>
+        </div>
+        <div style="height: 1px; background: rgba(0,0,0,.06); margin: 0 12px"></div>
+        <div style="padding: 10px 12px; display: flex; align-items: center; justify-content: space-between">
+          <h3 style="margin: 0; font-size: 12.5px; font-weight: 600">Shadow</h3>
+          <button type="button" role="switch" aria-checked="{{shadowOn}}" aria-label="Shadow" onClick="{{toggleShadow}}" style="{{switchTrack}}"><span style="width: 18px; height: 18px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,.25)"></span></button>
+        </div>
+      </section>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{showArrange}}" hint-placeholder-val="{{ false }}">
+    <div style="display: flex; flex-direction: column; gap: 10px; padding: 0 10px">
+      <section style="background: #FFFFFF; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 0 0 0.5px rgba(0,0,0,.06)">
+        <h3 style="margin: 0; font-size: 12.5px; font-weight: 600">Align</h3>
+        <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; padding: 2px; background: rgba(0,0,0,.06); border-radius: 8px">
+          <button type="button" class="ib" aria-label="Align left" style="height: 30px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 3v18 M8 7h10v4H8z M8 13h6v4H8z"></path></svg></button>
+          <button type="button" class="ib" aria-label="Align center" style="height: 30px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 3v18 M6 7h12v4H6z M8 13h8v4H8z"></path></svg></button>
+          <button type="button" class="ib" aria-label="Align right" style="height: 30px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M20 3v18 M6 7h10v4H6z M10 13h6v4h-6z"></path></svg></button>
+          <button type="button" class="ib" aria-label="Align top" style="height: 30px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M3 4h18 M7 8v10h4V8z M13 8v6h4V8z"></path></svg></button>
+          <button type="button" class="ib" aria-label="Align middle" style="height: 30px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M3 12h18 M7 6v12h4V6z M13 8v8h4V8z"></path></svg></button>
+          <button type="button" class="ib" aria-label="Align bottom" style="height: 30px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M3 20h18 M7 6v10h4V6z M13 10v6h4v-6z"></path></svg></button>
+        </div>
+      </section>
+      <section style="background: #FFFFFF; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 0 0 0.5px rgba(0,0,0,.06)">
+        <h3 style="margin: 0; font-size: 12.5px; font-weight: 600">Order</h3>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px">
+          <button type="button" style="height: 30px; border: 0; border-radius: 8px; background: rgba(0,0,0,.05); color: #1D1D1F; font: 500 12.5px Inter, -apple-system, system-ui, sans-serif; cursor: pointer">Bring forward</button>
+          <button type="button" style="height: 30px; border: 0; border-radius: 8px; background: rgba(0,0,0,.05); color: #1D1D1F; font: 500 12.5px Inter, -apple-system, system-ui, sans-serif; cursor: pointer">Send backward</button>
+        </div>
+        <label style="display: flex; flex-direction: column; gap: 6px; color: #6E6E73; font-size: 11.5px; font-weight: 500">Move to layer<select class="fld"><option>Layer 1</option></select></label>
+      </section>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{showText}}" hint-placeholder-val="{{ false }}">
+    <div style="display: flex; flex-direction: column; gap: 10px; padding: 0 10px">
+      <section style="background: #FFFFFF; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 0 0 0.5px rgba(0,0,0,.06)">
+        <label style="display: flex; flex-direction: column; gap: 6px; color: #6E6E73; font-size: 11.5px; font-weight: 500">Font<select class="fld"><option>Inter</option><option>System</option></select></label>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+          <label style="display: flex; flex-direction: column; gap: 6px; color: #6E6E73; font-size: 11.5px; font-weight: 500">Weight<select class="fld"><option>Medium</option><option>Regular</option><option>Semibold</option></select></label>
+          <label style="display: flex; flex-direction: column; gap: 6px; color: #6E6E73; font-size: 11.5px; font-weight: 500">Size<input class="fld" type="text" defaultValue="14"></label>
+        </div>
+        <div role="group" aria-label="Text alignment" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; padding: 2px; background: rgba(0,0,0,.06); border-radius: 8px">
+          <button type="button" class="ib" aria-label="Align text left" style="height: 26px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16 M4 12h10 M4 18h14"></path></svg></button>
+          <button type="button" aria-label="Align text center" aria-pressed="true" style="height: 26px; border: 0; border-radius: 6px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,0,0,.12); color: #1D1D1F; cursor: pointer; display: flex; align-items: center; justify-content: center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16 M7 12h10 M5 18h14"></path></svg></button>
+          <button type="button" class="ib" aria-label="Align text right" style="height: 26px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16 M10 12h10 M6 18h14"></path></svg></button>
+        </div>
+      </section>
+    </div>
+    </sc-if>
+
+    <div style="flex: 1; min-height: 12px"></div>
+    <div style="margin: 0 10px 10px; padding: 10px 12px; border-radius: 12px; background: #FFFFFF; box-shadow: 0 0 0 0.5px rgba(0,0,0,.06); display: flex; align-items: center; justify-content: space-between">
+      <span style="font-size: 12.5px; font-weight: 600">Export</span>
+      <button type="button" class="ib" aria-label="Add export setting" style="width: 24px; height: 24px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14 M5 12h14"></path></svg></button>
+    </div>
+  </aside>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { tool: 'select', tab: 'design', preset: 'soft', shadow: true, zoom: 100 };
+  }
+  renderVals() {
+    var self = this;
+    var s = this.state;
+    function mk(list) {
+      return list.map(function (t) {
+        var on = s.tool === t.id;
+        return {
+          label: t.label,
+          title: t.label + ' (' + t.key + ')',
+          d: t.d,
+          pressed: on ? 'true' : 'false',
+          pick: function () { self.setState({ tool: t.id }); },
+          style: 'width: 40px; height: 40px; border-radius: 12px;' + (on ? ' background: #0071E3; color: #FFFFFF; box-shadow: 0 2px 8px rgba(0,113,227,.35);' : '')
+        };
+      });
+    }
+    var toolsA = mk([
+      { id: 'select', label: 'Select', key: 'V', d: 'M6 3l12 9-5.5 1.2L9.5 19z' },
+      { id: 'hand', label: 'Pan', key: 'H', d: 'M8 13V6a1.5 1.5 0 0 1 3 0v5 M11 10.5V4.5a1.5 1.5 0 0 1 3 0V11 M14 10.5V6a1.5 1.5 0 0 1 3 0v7a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-2.7L3.5 13a1.5 1.5 0 0 1 2.5-1.6L8 14' }
+    ]);
+    var toolsB = mk([
+      { id: 'rect', label: 'Rectangle', key: 'R', d: 'M4 6h16v12H4z' },
+      { id: 'round', label: 'Rounded rectangle', key: 'U', d: 'M7 5h10a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3z' },
+      { id: 'ellipse', label: 'Ellipse', key: 'O', d: 'M12 5a8 7 0 1 0 0 14a8 7 0 1 0 0-14z' },
+      { id: 'diamond', label: 'Diamond', key: 'D', d: 'M12 3l9 9-9 9-9-9z' },
+      { id: 'triangle', label: 'Triangle', key: 'Y', d: 'M12 4l9 16H3z' }
+    ]);
+    var toolsC = mk([
+      { id: 'text', label: 'Text', key: 'T', d: 'M5 6V5h14v1 M12 5v14 M9 19h6' },
+      { id: 'connector', label: 'Connector', key: 'C', d: 'M19 5C12 5 12 19 5 19 M15 5h4v4' },
+      { id: 'pen', label: 'Pen', key: 'P', d: 'M4 20l4-1L19 8l-3-3L5 16z M14 7l3 3' }
+    ]);
+    var tabs = [
+      { id: 'design', label: 'Style' },
+      { id: 'arrange', label: 'Arrange' },
+      { id: 'text', label: 'Text' }
+    ].map(function (t) {
+      var on = s.tab === t.id;
+      return {
+        label: t.label,
+        selected: on ? 'true' : 'false',
+        pick: function () { self.setState({ tab: t.id }); },
+        style: 'height: 28px; border: 0; border-radius: 7px; cursor: pointer; font: ' + (on ? '600' : '500') + ' 12.5px Inter, -apple-system, system-ui, sans-serif; color: #1D1D1F;' + (on ? ' background: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,.12), 0 0 0 0.5px rgba(0,0,0,.04);' : ' background: transparent;')
+      };
+    });
+    var presets = [
+      { id: 'soft', label: 'Soft blue', chip: 'background: #EEF4FF; border: 1.5px solid #7FA7E8;' },
+      { id: 'solid', label: 'Solid blue', chip: 'background: #0071E3; border: 1.5px solid #0058B0;' },
+      { id: 'warm', label: 'Peach', chip: 'background: #FFEDE3; border: 1.5px solid #F0A07A;' },
+      { id: 'plain', label: 'Plain', chip: 'background: #FFFFFF; border: 1.5px solid #8E8E93;' },
+      { id: 'dashed', label: 'Dashed group', chip: 'background: transparent; border: 1.5px dashed #8E8E93;' },
+      { id: 'note', label: 'Note', chip: 'background: #FFF6CC; border: 1.5px solid #E0B400;' }
+    ].map(function (p) {
+      var on = s.preset === p.id;
+      return {
+        label: p.label,
+        pressed: on ? 'true' : 'false',
+        pick: function () { self.setState({ preset: p.id }); },
+        ring: 'height: 36px; border-radius: 10px; padding: 5px; cursor: pointer; display: flex; background: #F5F5F7; border: 0; box-shadow: ' + (on ? 'inset 0 0 0 2px #0071E3' : 'inset 0 0 0 0.5px rgba(0,0,0,.08)') + ';',
+        chip: 'flex: 1; border-radius: 6px; box-sizing: border-box; ' + p.chip
+      };
+    });
+    var z = s.zoom;
+    return {
+      toolsA: toolsA, toolsB: toolsB, toolsC: toolsC,
+      tabs: tabs, presets: presets,
+      showDesign: s.tab === 'design',
+      showArrange: s.tab === 'arrange',
+      showText: s.tab === 'text',
+      shadowOn: s.shadow ? 'true' : 'false',
+      toggleShadow: function () { self.setState({ shadow: !s.shadow }); },
+      switchTrack: 'width: 40px; height: 24px; border-radius: 12px; border: 0; padding: 3px; cursor: pointer; display: flex; transition: background .2s; background: ' + (s.shadow ? '#34C759' : '#D1D1D6') + '; justify-content: ' + (s.shadow ? 'flex-end' : 'flex-start') + ';',
+      zoomLabel: z + '%',
+      zoomIn: function () { self.setState({ zoom: Math.min(800, z + 25) }); },
+      zoomOut: function () { self.setState({ zoom: Math.max(25, z - 25) }); },
+      zoomFit: function () { self.setState({ zoom: 100 }); }
+    };
+  }
+}
+</script>
+</body>
+</html>

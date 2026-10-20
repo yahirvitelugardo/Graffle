@@ -69,7 +69,7 @@ final class ColorPresetsView: NSView {
             path.stroke()
             if let sel = selectedColor, matches(sel, s.color) {
                 let ring = NSBezierPath(roundedRect: s.rect.insetBy(dx: -2.5, dy: -2.5), xRadius: radius + 2, yRadius: radius + 2)
-                NSColor.controlAccentColor.setStroke()
+                Tok.accent.setStroke()
                 ring.lineWidth = 2
                 ring.stroke()
             }

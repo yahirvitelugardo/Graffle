@@ -322,7 +322,7 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        NSColor.white.setFill()
+        (isExporting ? NSColor.white : Tok.canvasBG).setFill()
         dirtyRect.fill()
 
         if !isExporting && showGrid { drawGrid(ctx, dirtyRect) }
@@ -339,30 +339,24 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
         drawOverlays(in: ctx)
     }
 
+    /// Dots, one every 20 points (a theme can recolor them so they contrast with its shapes).
     private func drawGrid(_ ctx: CGContext, _ rect: CGRect) {
-        // A theme can recolor the grid so it contrasts with its shapes; otherwise it is the usual faint black.
+        let spacing = Tok.gridSpacing
         let custom = drawing.theme?.gridColor.flatMap { RGBA(hex: $0) }
-        let minorLine = custom?.cg ?? NSColor(white: 0.0, alpha: 0.05).cgColor
-        let majorLine = custom.map { $0.with(alpha: min(1, $0.a * 1.8)).cg } ?? NSColor(white: 0.0, alpha: 0.09).cgColor
-        let z = zoom
-        let x0 = floor(rect.minX / gridSize) * gridSize, y0 = floor(rect.minY / gridSize) * gridSize
+        var color = custom?.cg ?? Tok.gridDot.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance { color = custom?.cg ?? Tok.gridDot.cgColor }
+        let z = max(zoom, 0.01)
+        let radius = max(0.9, 1.1 / z)
+        guard spacing * z >= 6 else { return }                               // too small to be useful when zoomed far out
         ctx.saveGState()
-        ctx.setLineWidth(1 / max(z, 0.01))
-        if z >= 0.5 {
-            ctx.setStrokeColor(minorLine)
+        ctx.setFillColor(color)
+        let x0 = floor(rect.minX / spacing) * spacing, y0 = floor(rect.minY / spacing) * spacing
+        var y = y0
+        while y <= rect.maxY {
             var x = x0
-            while x <= rect.maxX { ctx.move(to: CGPoint(x: x, y: rect.minY)); ctx.addLine(to: CGPoint(x: x, y: rect.maxY)); x += gridSize }
-            var y = y0
-            while y <= rect.maxY { ctx.move(to: CGPoint(x: rect.minX, y: y)); ctx.addLine(to: CGPoint(x: rect.maxX, y: y)); y += gridSize }
-            ctx.strokePath()
+            while x <= rect.maxX { ctx.fillEllipse(in: CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)); x += spacing }
+            y += spacing
         }
-        ctx.setStrokeColor(majorLine)
-        let major = gridSize * 10
-        var x = floor(rect.minX / major) * major
-        while x <= rect.maxX { ctx.move(to: CGPoint(x: x, y: rect.minY)); ctx.addLine(to: CGPoint(x: x, y: rect.maxY)); x += major }
-        var y = floor(rect.minY / major) * major
-        while y <= rect.maxY { ctx.move(to: CGPoint(x: rect.minX, y: y)); ctx.addLine(to: CGPoint(x: rect.maxX, y: y)); y += major }
-        ctx.strokePath()
         ctx.restoreGState()
     }
 
@@ -432,7 +426,7 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
         if st.opacity < 0.999 { ctx.setAlpha(CGFloat(st.opacity)) }
 
         if selection.contains(c.id) && !isExporting {
-            ctx.setStrokeColor(NSColor.controlAccentColor.withAlphaComponent(0.35).cgColor)
+            ctx.setStrokeColor(Tok.accent.withAlphaComponent(0.35).cgColor)
             ctx.setLineWidth(CGFloat(st.stroke.width) + 6)
             ctx.setLineCap(.round)
             ctx.addPath(g.path)
@@ -467,13 +461,13 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
         let str = NSAttributedString(string: c.text, attributes: Render.attributes(c.style.text, color: color))
         let sz = str.size()
         let rect = CGRect(x: p.x - sz.width / 2 - 4, y: p.y - sz.height / 2 - 1, width: sz.width + 8, height: sz.height + 2)
-        NSColor.white.setFill()
+        (isExporting ? NSColor.white : Tok.canvasBG).setFill()
         NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3).fill()
         str.draw(at: CGPoint(x: rect.minX + 4, y: rect.minY + 1))
     }
 
     private func drawOverlays(in ctx: CGContext) {
-        let accent = NSColor.controlAccentColor
+        let accent = Tok.accent
         let z = max(zoom, 0.01)
 
         for s in selectedShapes where editingPath == nil {      // while editing points, the anchors are the outline
@@ -504,7 +498,7 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
         }
         if !smartGuideLines.isEmpty {
             ctx.saveGState()
-            ctx.setStrokeColor(NSColor(srgbRed: 1, green: 0.18, blue: 0.58, alpha: 1).cgColor)
+            ctx.setStrokeColor(Tok.guideSnap.cgColor)
             ctx.setLineWidth(1 / z)
             let pad = 8 / z
             for g in smartGuideLines {
@@ -1277,7 +1271,7 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
         let z = max(zoom, 0.01), u = 1 / z
         let w = 12 * u, h = 9 * u
         let body = CGRect(x: bounds.maxX + 4 * u, y: bounds.minY - h - 6 * u, width: w, height: h)
-        let accent = NSColor.controlAccentColor.cgColor
+        let accent = Tok.accent.cgColor
         ctx.saveGState()
         ctx.setFillColor(accent)
         ctx.addPath(CGPath(roundedRect: body, cornerWidth: 2 * u, cornerHeight: 2 * u, transform: nil))
@@ -1358,16 +1352,16 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
     private func drawAnchor(_ p: CGPoint, selected: Bool, hot: Bool = false, in ctx: CGContext) {
         let z = max(zoom, 0.01), s = (hot ? 9 : 6) / z
         let r = CGRect(x: p.x - s / 2, y: p.y - s / 2, width: s, height: s)
-        ctx.setFillColor((selected || hot ? NSColor.controlAccentColor : NSColor.white).cgColor)
+        ctx.setFillColor((selected || hot ? Tok.accent : NSColor.white).cgColor)
         ctx.fill(r)
-        ctx.setStrokeColor(NSColor.controlAccentColor.cgColor)
+        ctx.setStrokeColor(Tok.accent.cgColor)
         ctx.setLineWidth(1 / z)
         ctx.stroke(r)
     }
 
     private func drawHandle(from a: CGPoint, to h: CGPoint, in ctx: CGContext) {
         let z = max(zoom, 0.01), r = 3.5 / z
-        ctx.setStrokeColor(NSColor.controlAccentColor.cgColor)
+        ctx.setStrokeColor(Tok.accent.cgColor)
         ctx.setLineWidth(1 / z)
         ctx.move(to: a); ctx.addLine(to: h)
         ctx.strokePath()
@@ -1380,7 +1374,7 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
     private func drawPen(_ pen: PenPath, in ctx: CGContext) {
         let z = max(zoom, 0.01)
         ctx.saveGState()
-        ctx.setStrokeColor(NSColor.controlAccentColor.cgColor)
+        ctx.setStrokeColor(Tok.accent.cgColor)
         ctx.setLineWidth(1.5 / z)
         ctx.setLineJoin(.round)
         ctx.addPath(pen.cgPath(extendingTo: penCursor))
@@ -1508,7 +1502,7 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
     private func drawPointEditing(_ path: PenPath, in ctx: CGContext) {
         let z = max(zoom, 0.01)
         ctx.saveGState()
-        ctx.setStrokeColor(NSColor.controlAccentColor.withAlphaComponent(0.6).cgColor)
+        ctx.setStrokeColor(Tok.accent.withAlphaComponent(0.6).cgColor)
         ctx.setLineWidth(1 / z)
         ctx.addPath(path.cgPath())
         ctx.strokePath()
@@ -1625,7 +1619,7 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
 
     private func drawSpacingMarks(in ctx: CGContext) {
         let z = max(zoom, 0.01), tick = 4 / z
-        let color = NSColor(srgbRed: 1, green: 0.18, blue: 0.58, alpha: 1)
+        let color = Tok.guideSnap
         ctx.saveGState()
         ctx.setStrokeColor(color.cgColor)
         ctx.setLineWidth(1 / z)

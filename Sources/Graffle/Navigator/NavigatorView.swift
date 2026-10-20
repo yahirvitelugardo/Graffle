@@ -49,7 +49,7 @@ final class NavigatorMapView: NSView {
     var viewportRect: CGRect { scroll.map { mapRect($0.documentVisibleRect) } ?? .zero }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor(white: 0.5, alpha: 0.12).setFill()
+        Tok.minimapBackdrop.setFill()
         bounds.fill()
         guard let canvas, scroll != nil, let ctx = NSGraphicsContext.current?.cgContext else { return }
         let t = transform()
@@ -89,9 +89,9 @@ final class NavigatorMapView: NSView {
         ctx.restoreGState()
         // What is on screen.
         let box = viewportRect
-        NSColor(srgbRed: 0.92, green: 0.22, blue: 0.22, alpha: 0.10).setFill()
+        Tok.minimapViewport.withAlphaComponent(0.10).setFill()
         box.fill()
-        NSColor(srgbRed: 0.92, green: 0.22, blue: 0.22, alpha: 1).setStroke()
+        Tok.minimapViewport.setStroke()
         let outline = NSBezierPath(rect: box.insetBy(dx: 0.75, dy: 0.75))
         outline.lineWidth = 1.5
         outline.stroke()

@@ -2,7 +2,7 @@ import AppKit
 import PDFKit
 import UniformTypeIdentifiers
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// Documents make their own windows. Only the developer helpers (--selftest, --render-sample, ...) need one
     /// of their own, so it is created on demand and never shown in normal use.
     private lazy var rig = DocumentWindowController()
@@ -187,6 +187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         NSApp.mainMenu = makeMainMenu()
+        UIAppearance.current.apply()
 
         // With nothing opened from Finder, start with the New Document window. (Files opened from Finder arrive just after launch.)
         if !isDeveloperRun {
@@ -249,6 +250,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func newDocumentChooser(_ sender: Any?) { showNewDocumentWindow() }
+
+    /// View → Appearance: System, Light or Dark for the interface (diagrams themselves are unaffected).
+    @objc func setAppearance(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let mode = UIAppearance(rawValue: raw) else { return }
+        UIAppearance.current = mode
+    }
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(AppDelegate.setAppearance(_:)) { item.state = (item.representedObject as? String) == UIAppearance.current.rawValue ? .on : .off }
+        return true
+    }
 
     func createDocument(_ choice: NewDocumentController.Choice) {
         switch choice.template.kind {
@@ -384,6 +396,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item("Same Size", #selector(CanvasView.matchSize(_:)), tag: 2),
         ]))
 
+        let appearanceMenu = submenu("Appearance", UIAppearance.allCases.map { mode in
+            let it = item(mode.title, #selector(AppDelegate.setAppearance(_:)))
+            it.representedObject = mode.rawValue
+            return it
+        })
         main.addItem(submenu("View", [
             item("Zoom In", #selector(DocumentWindowController.zoomIn(_:)), "="),
             item("Zoom Out", #selector(DocumentWindowController.zoomOut(_:)), "-"),
@@ -398,6 +415,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item("Snap to Grid", #selector(DocumentWindowController.toggleSnap(_:)), ";"),
             sep(),
             item("Theme…", #selector(DocumentWindowController.chooseTheme(_:))),
+            sep(),
+            appearanceMenu,
         ]))
 
         // Registering this as the Window menu is what makes AppKit list the open documents in it and add the
@@ -2656,6 +2675,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         steps.append(contentsOf: self.architectureSteps(bundled: bundled, tempDir: tempDir))
         steps.append(contentsOf: self.navigatorSteps())
         steps.append(contentsOf: self.classDiagramSteps(tempDir: tempDir))
+        steps.append(contentsOf: self.uiSteps())
         steps.append(contentsOf: self.databaseSteps(tempDir: tempDir))
         steps.append(contentsOf: self.starterSteps(bundled: bundled))
         steps.append(contentsOf: self.themeSteps(cv: cv, drag: drag, bundled: bundled, tempDir: tempDir))

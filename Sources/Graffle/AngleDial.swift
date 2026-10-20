@@ -41,9 +41,9 @@ final class AngleDial: NSControl {
         needle.line(to: tip)
         needle.lineWidth = 2
         needle.lineCapStyle = .round
-        NSColor.controlAccentColor.setStroke()
+        Tok.accent.setStroke()
         needle.stroke()
-        NSColor.controlAccentColor.setFill()
+        Tok.accent.setFill()
         NSBezierPath(ovalIn: NSRect(x: tip.x - 3, y: tip.y - 3, width: 6, height: 6)).fill()
         NSColor.secondaryLabelColor.setFill()
         NSBezierPath(ovalIn: NSRect(x: c.x - 1.5, y: c.y - 1.5, width: 3, height: 3)).fill()
