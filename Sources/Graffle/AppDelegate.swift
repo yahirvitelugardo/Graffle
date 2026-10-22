@@ -13,7 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var snapshotter: SVGSnapshotter?
 
     private static let developerFlags: Set<String> = [
-        "--render-sample", "--render-about", "--import-to-png", "--architecture-to-png", "--render-chooser", "--render-navigator", "--classes-to-png", "--classes-to-code", "--render-dbwizard", "--starter-to-png", "--circuit-parts-to-png", "--svg-to-png", "--selftest", "--debug-window",
+        "--render-sample", "--render-about", "--import-to-png", "--architecture-to-png", "--render-chooser", "--render-navigator", "--classes-to-png", "--classes-to-code", "--render-dbwizard", "--starter-to-png", "--stl-to-png", "--circuit-parts-to-png", "--svg-to-png", "--selftest", "--debug-window",
     ]
     private var isDeveloperRun: Bool { !AppDelegate.developerFlags.isDisjoint(with: CommandLine.arguments) }
 
@@ -50,6 +50,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 if let png = canvas.pngData() { try? png.write(to: URL(fileURLWithPath: a[i + 2])) }
                 print("starter:", starter.rawValue, d.shapes.count, "shapes,", d.connectors.count, "connectors")
             }
+            exit(0)
+        }
+        if let i = CommandLine.arguments.firstIndex(of: "--stl-to-png"), i + 2 < CommandLine.arguments.count {
+            // Dev helper: the views of an STL file ("sample" for the built-in bracket) as PNG.
+            let a = CommandLine.arguments
+            let mesh = a[i + 1] == "sample" ? MeshSamples.bracket() : (a[i + 1] == "sphere" ? MeshSamples.sphere(rings: 24, segments: 36) : ((try? STLParser.parse(Data(contentsOf: URL(fileURLWithPath: a[i + 1])))) ?? Mesh()))
+            var options = MeshViewOptions()
+            if a.contains("--american") { options.system = .american }
+            if a.contains("--all") { options.views = ViewKind.allCases }
+            let started = Date()
+            let d = MeshDrawing.build(mesh, options: options)
+            canvas.frame = CGRect(origin: .zero, size: CanvasView.canvasSize)
+            canvas.load(d)
+            if let png = canvas.pngData() { try? png.write(to: URL(fileURLWithPath: a[i + 2])) }
+            print("stl:", mesh.triangles.count, "triangles,", d.shapes.count, "shapes, \(String(format: "%.2f", Date().timeIntervalSince(started))) s")
             exit(0)
         }
         if let i = CommandLine.arguments.firstIndex(of: "--circuit-parts-to-png"), i + 1 < CommandLine.arguments.count {
@@ -386,6 +401,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item("Import SVG…", #selector(DocumentWindowController.importSVG(_:)), "i", [.command, .shift]),
             item("Import Project Architecture…", #selector(AppDelegate.importXcodeProject(_:))),
             item("Import Class Diagram…", #selector(AppDelegate.importClassDiagram(_:))),
+            item("Import STL as Views…", #selector(AppDelegate.importSTL(_:))),
             item("Import Theme…", #selector(AppDelegate.importThemeFile(_:))),
             item("Export as PNG…", #selector(DocumentWindowController.exportPNG(_:)), "e", [.command, .shift]),
             item("Export as PDF…", #selector(DocumentWindowController.exportPDF(_:)), "p", [.command, .shift]),
@@ -2749,6 +2765,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         steps.append(contentsOf: self.starterSteps(bundled: bundled))
         steps.append(contentsOf: self.librarySteps(bundled: bundled))
         steps.append(contentsOf: self.draftingSteps(bundled: bundled))
+        steps.append(contentsOf: self.meshSteps(bundled: bundled))
         steps.append(contentsOf: self.themeSteps(cv: cv, drag: drag, bundled: bundled, tempDir: tempDir))
         var twoDocs: (a: GraffleDocument, b: GraffleDocument)?
         steps.append(("documents: New opens independent windows, each with its own canvas and inspector", {
