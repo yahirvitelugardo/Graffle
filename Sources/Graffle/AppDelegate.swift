@@ -2704,7 +2704,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return evmMentions == 2 && !text.contains("Diseñada") && text.contains("designed and developed by EVM")
                 && text.contains("All credit for this app goes to EVM")
                 && linkTarget == URL(string: "https://evm.mx") && About.website.absoluteString == "https://evm.mx"
-                && name == "Graffle" && hasCredits && copyright == "Copyright © 2026 EVM. Released under the MIT License." && text.contains("open-source")
+                && name == "Graffle" && hasCredits && copyright == "Copyright © 2026 EVM. Released under the MIT License." && text.contains("Open Source") && text.contains("MIT License")
                 && !About.version.isEmpty
         }))
         // ---- Documents: many open at once, each with its own window

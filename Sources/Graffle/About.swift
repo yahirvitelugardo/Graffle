@@ -40,7 +40,7 @@ enum About {
         out.append(NSAttributedString(string: ".\n", attributes: body))
         out.append(NSAttributedString(string: "evm.mx", attributes: link))
         out.append(NSAttributedString(string: "\n", attributes: body))
-        out.append(NSAttributedString(string: "Free and open-source software.", attributes: body))   // the panel itself prints the copyright line below
+        out.append(NSAttributedString(string: "Open Source software, released under the MIT License.", attributes: body))   // the panel itself prints the copyright line below
         return out
     }
 
