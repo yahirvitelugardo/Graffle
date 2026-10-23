@@ -9,7 +9,7 @@ extension AppDelegate {
             guard items.count >= 90, Set(items.map(\.id)).count == items.count else { return false }
             guard Set(items.map(\.category)).isSubset(of: Set(ShapeCatalog.categoryOrder)),
                   Set(ShapeCatalog.categoryOrder).isSubset(of: Set(items.map(\.category))) else { return false }
-            for item in items where item.compose == nil {
+            for item in items where item.compose == nil && item.custom == nil {
                 let s = item.previewShape()
                 let box = s.path().boundingBoxOfPath
                 // Every outline fills its frame (within a little overshoot for curves) and has some size.

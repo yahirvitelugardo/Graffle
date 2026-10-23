@@ -83,8 +83,8 @@ struct LibraryItem: Identifiable {
 /// The built-in catalog: basic shapes and polygons, arrows, flowchart blocks, callouts, diagram parts and the circuit symbols.
 enum ShapeCatalog {
     static let basic = "Basic Shapes", polygons = "Polygons and Stars", arrows = "Arrows", flowchart = "Flowchart", callouts = "Callouts and Notes"
-    static let diagram = "Diagram Parts", architecture = "Architecture", circuits = "Circuit Symbols"
-    static let categoryOrder = [basic, polygons, arrows, flowchart, callouts, diagram, architecture, circuits]
+    static let diagram = "Diagram Parts", er = "Entity-Relationship", architecture = "Architecture", circuits = "Circuit Symbols"
+    static let categoryOrder = [basic, polygons, arrows, flowchart, callouts, diagram, er, architecture, circuits]
 
     /// A path in normalized coordinates, written as it reads on paper.
     struct Pen {
@@ -146,6 +146,39 @@ enum ShapeCatalog {
     private static func item(_ id: String, _ name: String, _ category: String, _ w: Double, _ h: Double, kind: ShapeKind = .path,
                              corner: Double = 0, _ outline: [PathSegment]? = nil) -> LibraryItem {
         LibraryItem(id: id, name: name, category: category, origin: .builtin, size: CGSize(width: w, height: h), kind: kind, outline: outline, cornerRadius: corner)
+    }
+
+    /// A crow's-foot table: a colored header and one row per field, grouped so it moves as one.
+    private static func erTable(_ id: String, _ name: String, fields: [String]) -> LibraryItem {
+        let layer = UUID(), group = UUID()
+        let salmon = RGBA(0.98, 0.72, 0.66), zebra = RGBA(0.90, 0.91, 0.93), line = RGBA(0.33, 0.37, 0.45), ink = RGBA(0.13, 0.14, 0.18)
+        let width = 200.0, head = 32.0, row = 26.0
+        let height = head + row * Double(fields.count)
+        func shape(_ frame: CGRect, _ text: String, fill: RGBA, stroke: Bool, size: Double, bold: Bool, align: HAlign) -> Shape {
+            var st = Style()
+            st.fill.color = fill
+            st.stroke.visible = stroke
+            st.stroke.color = line
+            st.stroke.width = 1.5
+            st.text.size = size
+            st.text.bold = bold
+            st.text.hAlign = align
+            st.text.color = ink
+            return Shape(layer: layer, kind: .rectangle, frame: frame, style: st, text: text, group: group)
+        }
+        var shapes = [shape(CGRect(x: 0, y: 0, width: width, height: height), "", fill: RGBA(1, 1, 1), stroke: true, size: 13, bold: false, align: .center)]
+        shapes.append(shape(CGRect(x: 0, y: 0, width: width, height: head), "Table", fill: salmon, stroke: true, size: 15, bold: true, align: .center))
+        for (i, field) in fields.enumerated() {
+            shapes.append(shape(CGRect(x: 0, y: head + row * Double(i), width: width, height: row), field,
+                                fill: i % 2 == 0 ? RGBA(1, 1, 1) : zebra, stroke: false, size: 13, bold: false, align: .left))
+        }
+        var d = Drawing()
+        d.layers = [Layer(id: layer, name: "Layer 1")]
+        d.shapes = shapes
+        var it = LibraryItem(id: id, name: name, category: er, origin: .builtin, size: CGSize(width: width, height: height))
+        it.custom = d
+        it.usesCurrentStyle = false
+        return it
     }
 
     static let items: [LibraryItem] = {
@@ -276,6 +309,21 @@ enum ShapeCatalog {
                 p.oval(0.5, 0.22, 0.24, 0.2); p.m(0.05, 1); p.c(0.05, 0.62, 0.95, 0.62, 0.95, 1); p.z() }),
         ]
 
+        // MARK: Entity-relationship (Chen notation and crow's-foot tables)
+        out += [
+            item("er-entity", "Entity", er, 140, 70, kind: .rectangle),
+            item("er-weak-entity", "Weak Entity", er, 150, 80, path { p in
+                p.poly([(0, 0), (1, 0), (1, 1), (0, 1)]); p.poly([(0.05, 0.1), (0.95, 0.1), (0.95, 0.9), (0.05, 0.9)]) }),
+            item("er-relationship", "Relationship", er, 150, 90, kind: .diamond),
+            item("er-weak-relationship", "Weak Relationship", er, 160, 100, path { p in
+                p.poly([(0.5, 0), (1, 0.5), (0.5, 1), (0, 0.5)]); p.poly([(0.5, 0.13), (0.88, 0.5), (0.5, 0.87), (0.12, 0.5)]) }),
+            item("er-attribute", "Attribute", er, 120, 60, kind: .ellipse),
+            item("er-multivalued", "Multivalued Attribute", er, 130, 70, path { p in
+                p.oval(0.5, 0.5, 0.5, 0.5); p.oval(0.5, 0.5, 0.42, 0.38) }),
+            erTable("er-table", "Table", fields: ["id", "name", "email"]),
+            erTable("er-table-small", "Table (One Field)", fields: ["id"]),
+        ]
+
         out += ArchitectureCatalog.items
 
         // MARK: Circuit symbols
@@ -291,7 +339,7 @@ enum ShapeCatalog {
     /// Search terms that don't appear in an item's name.
     private static let synonyms: [String: String] = [
         "fc-process": "block step", "fc-terminator": "start end stop oval", "fc-decision": "if branch rhombus", "fc-data": "input output io",
-        "fc-database": "storage db", "star-5": "pentagram", "cloud": "weather", "person": "people avatar", "actor": "stick figure uml use case",
+        "fc-database": "storage db", "star-5": "pentagram", "cloud": "weather", "person": "people avatar", "er-entity": "entidad chen", "er-relationship": "relacion rhombus chen", "er-attribute": "atributo chen", "er-table": "tabla database sql crow foot", "actor": "stick figure uml use case",
         "fc-document": "paper file", "arch-door-single": "puerta", "arch-window": "ventana", "arch-stairs": "escalera", "arch-bed-double": "cama", "arch-toilet": "wc inodoro baño", "server": "rack computer", "monitor": "screen display computer",
     ]
 
