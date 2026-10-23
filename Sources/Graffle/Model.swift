@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 
 // MARK: - Colors
 
@@ -10,8 +14,14 @@ struct RGBA: Codable, Equatable {
     }
 
     init(_ color: NSColor) {
+        #if canImport(AppKit)
         let c = color.usingColorSpace(.sRGB) ?? NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 1)
         self.init(Double(c.redComponent), Double(c.greenComponent), Double(c.blueComponent), Double(c.alphaComponent))
+        #else
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        color.getRed(&r, green: &g, blue: &b, alpha: &a)
+        self.init(Double(r), Double(g), Double(b), Double(a))
+        #endif
     }
 
     var ns: NSColor { NSColor(srgbRed: r, green: g, blue: b, alpha: a) }
@@ -212,7 +222,11 @@ struct TextFormat: Codable, Equatable {
     /// "System" (the interface font) followed by every font family installed on this Mac, A to Z.
     /// Hidden system families (their names start with a dot) are left out.
     static let installedFonts: [String] = {
+        #if canImport(AppKit)
         let families = Set(NSFontManager.shared.availableFontFamilies.filter { !$0.hasPrefix(".") })
+        #else
+        let families = Set(UIFont.familyNames.filter { !$0.hasPrefix(".") })
+        #endif
         return ["System"] + families.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }()
 }

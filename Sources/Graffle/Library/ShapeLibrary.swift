@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 
 /// The user's own shapes ("My Shapes"): any selection can be saved and put back on the canvas later.
 /// They live in one JSON file in Application Support, shared by every document.

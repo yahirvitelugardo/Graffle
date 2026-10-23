@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 
 /// Writes a `Drawing` as an SVG 1.1 document.
 /// Visible layers become `<g>` groups in stacking order; each shape keeps its own rotation, gradient,

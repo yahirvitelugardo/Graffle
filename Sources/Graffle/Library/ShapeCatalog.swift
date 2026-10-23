@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 
 /// One entry of the Shape Library: something that can be put on the canvas with a click or a drag.
 struct LibraryItem: Identifiable {
