@@ -1,8 +1,4 @@
-#if canImport(AppKit)
 import AppKit
-#else
-import UIKit
-#endif
 
 /// Turns a theme into styles: how a shape, a connector or a whole drawing looks under it.
 extension ThemeDefinition {
@@ -38,11 +34,7 @@ extension ThemeDefinition {
 
     static func installedFont(from list: [String]?) -> String? {
         guard let list else { return nil }
-        #if canImport(AppKit)
         let families = Set(NSFontManager.shared.availableFontFamilies)
-        #else
-        let families = Set(UIFont.familyNames)
-        #endif
         return list.first { families.contains($0) }
     }
 

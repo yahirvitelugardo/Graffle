@@ -1,8 +1,4 @@
-#if canImport(AppKit)
 import AppKit
-#else
-import UIKit
-#endif
 
 extension UUID {
     /// A stable number derived from the id, so hand-drawn wobble is the same every time a shape is drawn.

@@ -120,11 +120,6 @@ enum DatabaseConnector {
         return dirs.map { $0 + "/" + tool }.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
-    #if !os(macOS)
-    static func run(_ tool: String, _ args: [String], _ env: [String: String]) throws -> String {
-        throw DatabaseError.message("Server databases need the `\(tool)` command-line client, which only exists on a Mac. Open a SQLite file or a SQL script instead.")
-    }
-    #else
     static func run(_ tool: String, _ args: [String], _ env: [String: String]) throws -> String {
         guard let exe = find(tool) else { throw DatabaseError.message("`\(tool)` isn't installed.") }
         let process = Process()
@@ -151,7 +146,6 @@ enum DatabaseConnector {
         }
         return out
     }
-    #endif
 
     private static func command(for c: DatabaseConnection, sql: String) -> (tool: String, args: [String], env: [String: String]) {
         switch c.kind {

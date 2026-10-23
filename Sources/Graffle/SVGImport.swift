@@ -1,8 +1,4 @@
-#if canImport(AppKit)
 import AppKit
-#else
-import UIKit
-#endif
 
 /// Reads simple SVG files into editable shapes.
 ///

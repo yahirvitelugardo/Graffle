@@ -109,13 +109,3 @@ build/Graffle.app/Contents/MacOS/Graffle --selftest  # the same, plus the multi-
 ## Pending (ideas)
 
 Pages, and orthogonal routing that avoids obstacles.
-
-## iPad
-
-An iPad version lives in `iPad/` (SwiftUI shell + a UIKit port of the canvas, sharing the model, render, theme, importer and code-generation sources with the Mac app). It opens and saves the same `.graf` files, supports touch, Apple Pencil, trackpad and keyboard, and has the inspector, layers, shape library, themes, templates, importers (SVG, STL, Xcode/.NET/Gradle architecture, class diagrams, SQLite/SQL → ER), code generation and PNG/PDF/SVG export. Server databases and Swift-package manifests need a Mac.
-
-```bash
-brew install xcodegen
-cd iPad && xcodegen generate
-open GraffleiPad.xcodeproj   # or: xcodebuild -scheme Graffle -sdk iphonesimulator build
-```

@@ -1,8 +1,4 @@
-#if canImport(AppKit)
 import AppKit
-#else
-import UIKit
-#endif
 
 /// The electronic symbols Graffle can draw (diagram only: nothing is simulated).
 /// Every symbol is one free-form path shape whose leads end at the middle of the frame's sides,
@@ -316,7 +312,6 @@ enum CircuitPart: String, CaseIterable {
         return Connector(layer: layer, from: from, to: to, route: .orthogonal, startHead: .none, endHead: .none, style: st)
     }
 
-    #if canImport(AppKit)
     /// A small picture of the symbol for menus.
     func icon(size box: NSSize = NSSize(width: 34, height: 22)) -> NSImage {
         let shape = makeShape(layer: UUID(), at: .zero, number: 1)
@@ -336,5 +331,4 @@ enum CircuitPart: String, CaseIterable {
             return true
         }
     }
-    #endif
 }

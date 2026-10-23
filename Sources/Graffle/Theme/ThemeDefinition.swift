@@ -1,8 +1,4 @@
-#if canImport(AppKit)
 import AppKit
-#else
-import UIKit
-#endif
 
 // MARK: Color helpers
 

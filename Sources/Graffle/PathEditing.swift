@@ -1,8 +1,4 @@
-#if canImport(AppKit)
 import AppKit
-#else
-import UIKit
-#endif
 
 /// Turns a CGPath into the normalized outline stored on `.path` shapes.
 enum Outline {

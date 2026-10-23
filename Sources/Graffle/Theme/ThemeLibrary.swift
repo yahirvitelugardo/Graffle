@@ -1,8 +1,4 @@
-#if canImport(AppKit)
 import AppKit
-#else
-import UIKit
-#endif
 
 extension Notification.Name {
     /// Posted when themes are added to the library.
@@ -16,7 +12,7 @@ enum ThemeLibrary {
     /// Where imported themes live. Settable so tests can use a scratch folder.
     nonisolated(unsafe) static var userFolder: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
         return base.appendingPathComponent("Graffle/Themes", isDirectory: true)
     }()
 

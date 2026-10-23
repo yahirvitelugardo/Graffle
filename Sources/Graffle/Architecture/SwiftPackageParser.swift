@@ -27,11 +27,6 @@ enum SwiftPackageParser {
     /// Produces the JSON that `swift package dump-package` prints for a package folder. Replaceable, so tests can feed canned output.
     typealias Runner = (URL) throws -> Data
 
-    #if !os(macOS)
-    static let defaultRunner: Runner = { _ in
-        throw ParseError.toolFailed("Reading a Swift package's manifest needs the Swift toolchain, which only exists on a Mac.")
-    }
-    #else
     static let defaultRunner: Runner = { folder in
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/swift")
@@ -56,7 +51,6 @@ enum SwiftPackageParser {
         }
         return data
     }
-    #endif
 
     private struct External {
         var identity: String

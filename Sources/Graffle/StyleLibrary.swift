@@ -1,8 +1,4 @@
-#if canImport(AppKit)
 import AppKit
-#else
-import UIKit
-#endif
 
 /// A named look the user can apply to any object, in any document.
 struct SavedStyle: Codable, Identifiable, Equatable {

@@ -1,8 +1,4 @@
-#if canImport(AppKit)
 import AppKit
-#else
-import UIKit
-#endif
 
 /// Stateless drawing helpers shared by the canvas and the exporters.
 enum Render {
@@ -17,16 +13,9 @@ enum Render {
             let desc = NSFontDescriptor(fontAttributes: [.family: t.font])
             f = NSFont(descriptor: desc, size: size) ?? .systemFont(ofSize: size)
         }
-        #if canImport(AppKit)
         let fm = NSFontManager.shared
         if t.bold { f = fm.convert(f, toHaveTrait: .boldFontMask) }
         if t.italic { f = fm.convert(f, toHaveTrait: .italicFontMask) }
-        #else
-        var traits: UIFontDescriptor.SymbolicTraits = f.fontDescriptor.symbolicTraits
-        if t.bold { traits.insert(.traitBold) }
-        if t.italic { traits.insert(.traitItalic) }
-        if let d = f.fontDescriptor.withSymbolicTraits(traits) { f = UIFont(descriptor: d, size: size) }
-        #endif
         return f
     }
 
@@ -58,13 +47,8 @@ enum Render {
 
     static func drawText(_ text: String, in rect: CGRect, format t: TextFormat, color: NSColor) {
         let str = NSAttributedString(string: text, attributes: attributes(t, color: color))
-        #if canImport(AppKit)
         let h = str.boundingRect(with: CGSize(width: rect.width, height: .greatestFiniteMagnitude),
                                  options: [.usesLineFragmentOrigin]).height
-        #else
-        let h = str.boundingRect(with: CGSize(width: rect.width, height: .greatestFiniteMagnitude),
-                                 options: [.usesLineFragmentOrigin], context: nil).height
-        #endif
         let bh = min(h, rect.height)
         let y: CGFloat
         switch t.vAlign {
@@ -72,11 +56,7 @@ enum Render {
         case .middle: y = rect.midY - bh / 2
         case .bottom: y = rect.maxY - bh
         }
-        #if canImport(AppKit)
         str.draw(with: CGRect(x: rect.minX, y: y, width: rect.width, height: bh), options: [.usesLineFragmentOrigin])
-        #else
-        str.draw(with: CGRect(x: rect.minX, y: y, width: rect.width, height: bh), options: [.usesLineFragmentOrigin], context: nil)
-        #endif
     }
 
     // MARK: Stroke and fill
